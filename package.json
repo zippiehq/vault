@@ -1,0 +1,17 @@
+{
+  "name": "vaultv4",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "hdkey": "^0.8.0",
+    "secp256k1": "^3.5.0",
+    "sha.js": "^2.4.10",
+    "store": "^2.0.12"
+  }
+}
