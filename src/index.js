@@ -7,7 +7,6 @@ const crypto = require('crypto');
 // vault per-session state
 var inited = false
 var apphash = null
-var origin = null
 var pubex = null
 var pubex_hd = null
 
@@ -43,7 +42,7 @@ function vaultInit(event) {
   if ('trustOrigin' in event.data.init) {
     // is this origin on our blacklist such as IPFS gateway, if so reject it and ask to be launched instead
     // but for now we just trust our browser
-    apphash = shajs('sha256').update(origin).digest()
+    apphash = shajs('sha256').update(event.origin).digest()
     pubex = store.get('pubex-' + apphash.toString('hex'))
     if (pubex == null) {
       // balk and ask to re-launch, we need launcher to set pubex for us first time for now
@@ -93,13 +92,14 @@ async function setup() {
   // - launch a uri w/ a cookie for authentication towards an app-pubex
   // - start a signup process and afterwards launch a uri as linked
   // XXX don't bother to allow anything if not initialised, show up signup?
-  if (store.get('vaultSetup') == null) {
-    alert('vault not setup')
-  }
-  
   if (location.hash.startsWith('#launch=')) {
     // TODO: slice off the # in the end of target uri to allow deep returns but same context
     var uri = location.hash.slice('#launch='.length)
+    if (store.get('vaultSetup') == null) {
+      window.location = location.href.split('#')[0] + '#signup=' + uri
+      window.location.reload()
+      return
+    }
     apphash = shajs('sha256').update(uri).digest()
     pubex = store.get('pubex-' + apphash.toString('hex'))
     if (pubex == null) {
@@ -117,11 +117,15 @@ async function setup() {
       }
       var vaultcookie = buf.toString('hex')
       // XXX Should this be a session cookie or somehow related to apphash for cleaning out later?
+      // should really use indexeddb where we can kind of auto-delete old ones
       store.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
       // TODO: add deep return possible
       window.location = uri + '#zipper-vault=' + location.href.split('#')[0] + '#' + vaultcookie
+      window.location.reload()
+      return
     })
   } else if (location.hash.startsWith('#signup=')) {
+    alert('signup ux')
     // show signup UX, generate keys
   }
 }
