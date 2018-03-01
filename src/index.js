@@ -46,6 +46,7 @@ function vaultInit(event) {
   if ('trustOrigin' in event.data.init) {
     // is this origin on our blacklist such as IPFS gateway, if so reject it and ask to be launched instead
     // but for now we just trust our browser
+    // TODO: do we actually need a re-launch; does changing top level URI always cause a reload, when done from iframe?
     apphash = shajs('sha256').update(event.origin).digest()
     pubex = store.get('pubex-' + apphash.toString('hex'))
     if (pubex == null) {
@@ -129,8 +130,6 @@ async function setup() {
         throw err
       }
       var vaultcookie = buf.toString('hex')
-      // XXX Should this be a session cookie or somehow related to apphash for cleaning out later?
-      // should really use indexeddb where we can kind of auto-delete old ones
       sessionStore.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
       // TODO: add deep return possible
       window.location = uri + '#zipper-vault=' + location.href.split('#')[0] + '#' + vaultcookie
