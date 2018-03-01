@@ -4,13 +4,16 @@ var shajs = require('sha.js')
 var store = require('store')
 const crypto = require('crypto');
 
+var sessionStoreEngine = require('store/storages/sessionStorage')
+var sessionStore = store.createStore(sessionStoreEngine)
+
 // vault per-session state
 var inited = false
 var apphash = null
 var pubex = null
-var pubex_hd = null
+var pubex_hdkey = null
 
-// vault contains:
+// vault database (currently localstorage, should be indexeddb) contains:
 // cache of app hash -> app-pubex
 // device local private key
 // device authentication private key
@@ -33,9 +36,10 @@ function deriveWithHash(hdkey, hash) {
 function vaultInit(event) {
   var callback = event.data.callback
 
+  // if we aren't set up, ask to sign-in, give optional launch url
   if (store.get('vaultSetup') == null) {
     // request to sign in
-    parent.postMessage({'callback' : callback, 'result' : 'signin'}, event.origin)
+    parent.postMessage({'callback' : callback, 'result' : 'signin', launch: location.href.split('#')[0]}, event.origin)
     return
   }
   
@@ -46,7 +50,7 @@ function vaultInit(event) {
     pubex = store.get('pubex-' + apphash.toString('hex'))
     if (pubex == null) {
       // balk and ask to re-launch, we need launcher to set pubex for us first time for now
-      parent.postMessage({'callback' : callback, 'result' : 'launch', launch : location.href, reason: 'trust origin but no pubex'}, event.origin)
+      parent.postMessage({'callback' : callback, 'result' : 'launch', launch : location.href.split('#')[0], reason: 'trust origin but no pubex'}, event.origin)
       return
     }
   }
@@ -54,23 +58,23 @@ function vaultInit(event) {
     // okay so we aren't asked to trust origin but instead trust a cookie. make sure there's one
     if ('originCookie' in event.data.init) {
       var magiccookie = event.data.init.originCookie
-      apphash = store.get('vault-cookie-' + magiccookie)
-      store.remove('vault-cookie-' + magiccookie)
+      apphash = sessionStore.get('vault-cookie-' + magiccookie)
+      sessionStore.remove('vault-cookie-' + magiccookie)
       if (apphash) {
         pubex = store.get('pubex-' + apphash.toString('hex'))
         // redirection should have given a pubex already, else balk and send 'please re-launch' back
         if (pubex == null) {
           // balk and send 'please re-launch' back
-          parent.postMessage({'callback' : callback, 'result' : 'launch', launch : location.href, reason: 'valid cookie but no pubex'}, event.origin)
+          parent.postMessage({'callback' : callback, 'result' : 'launch', launch : location.href.split('#')[0], reason: 'valid cookie but no pubex'}, event.origin)
           return
         }
       } else {
         // balk and send 'please re-launch' back
-        parent.postMessage({'callback' : callback, 'result' : 'launch', launch : location.href, reason: 'no cookie'}, event.origin)
+        parent.postMessage({'callback' : callback, 'result' : 'launch', launch : location.href.split('#')[0], reason: 'no cookie'}, event.origin)
         return
       }
     } else {
-      parent.postMessage({'callback' : callback, 'result' : 'launch', launch : location.href, reason: 'not trusted nor cookie'}, event.origin)
+      parent.postMessage({'callback' : callback, 'result' : 'launch', launch : location.href.split('#')[0], reason: 'not trusted nor cookie'}, event.origin)
     }
   }
   // okay, now we have apphash and pubex
@@ -82,16 +86,24 @@ function vaultInit(event) {
 async function getSeed() {
   // in real case this gets the other slice from the server and grabs seed for a moment
   return new Promise(resolve => {
-    // XXX FIXME
-    resolve(new Buffer('a0c42a9c3ac6abf2ba6a9946ae83af18f51bf1c9fa7dacc4c92513cc4dd015834341c775dcd4c0fac73547c5662d81a9e9361a0aac604a73a321bd9103bce8af', 'hex'))
+    // simulate terrible network
+    setTimeout(() => {
+      resolve(Buffer.from(store.get('masterseed-NOPRODUCTION'), 'hex'))
+    }, 2000);
   })
+}
+
+async function getAppPrivEx() {
+  let seed = await getSeed()
+  let hdkey = HDKey.fromMasterSeed(buf)
+  let privex_hdkey = HDKey.fromExtendedKey(deriveWithHash(hdkey, apphash).privateExtendedKey)
+  return privex_hdkey
 }
 
 async function setup() {
   // we either:
   // - launch a uri w/ a cookie for authentication towards an app-pubex
   // - start a signup process and afterwards launch a uri as linked
-  // XXX don't bother to allow anything if not initialised, show up signup?
   if (location.hash.startsWith('#launch=')) {
     // TODO: slice off the # in the end of target uri to allow deep returns but same context
     var uri = location.hash.slice('#launch='.length)
@@ -100,6 +112,7 @@ async function setup() {
       window.location.reload()
       return
     }
+    document.getElementById('content').innerHTML = 'signing in with Zipper...'
     apphash = shajs('sha256').update(uri).digest()
     pubex = store.get('pubex-' + apphash.toString('hex'))
     if (pubex == null) {
@@ -118,18 +131,74 @@ async function setup() {
       var vaultcookie = buf.toString('hex')
       // XXX Should this be a session cookie or somehow related to apphash for cleaning out later?
       // should really use indexeddb where we can kind of auto-delete old ones
-      store.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
+      sessionStore.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
       // TODO: add deep return possible
       window.location = uri + '#zipper-vault=' + location.href.split('#')[0] + '#' + vaultcookie
-      window.location.reload()
       return
     })
   } else if (location.hash.startsWith('#signup=')) {
+    if (store.get('vaultSetup') != null) {
+      alert('already setup')
+      return
+    }
     alert('signup ux')
+    // XXX ask if you have another device
+    crypto.randomBytes(64, (err, buf) => {
+      if (err) {
+        throw err
+      }
+      var hdkey = HDKey.fromMasterSeed(buf)
+      store.set('masterseed-NOPRODUCTION', buf.toString('hex'))
+      store.set('vaultSetup', 1)
+
+      // we're now done, now launching
+      var uri = location.hash.slice('#signup='.length)
+      window.location = location.href.split('#')[0] + '#launch=' + uri
+      window.location.reload()
+    })
     // show signup UX, generate keys
+  } else {
+    alert('launched plainly, what now?')
   }
 }
 
+function handleVaultMessage(event) {
+  if (event.source == parent)
+  {
+    // are we inited? if so, only accept one message, init
+    if ('init' in event.data && !inited) {
+      vaultInit(event);
+      return;
+    }
+    if (!inited) {
+      return
+    }
+    // this doesn't give hardened keys for now
+    if ('secp256k1KeyInfo' in event.data) {
+      // key { derive: 'M/0' } 
+      var callback = event.data.callback
+      var ahdkey = pubex_hd.derive(event.data.secp256k1KeyInfo.key.derive)
+      var pubkey = secp256k1.publicKeyConvert(ahdkey.publicKey, false)
+      // SEC1 form return
+      parent.postMessage({'callback' : callback, 'result' : { 'pubkey' : pubkey.toString('hex'), 'pubex' : ahdkey.publicExtendedKey }}, event.origin)
+    } else if ('secp256k1Sign' in event.data) {
+      // key { derive 'm/0' }
+      var callback = event.data.callback;
+      
+      // we need to grab a private key for this
+      getAppPrivEx().then((privex_hdkey) => {
+        var from = privex.hdkey.derive(event.data.secp256k1Sign.key.derive)
+        var sig = secp256k1.sign(Buffer.from(event.data.secp256k1Sign.hash, 'hex'), from.privateKey)
+        parent.postMessage({'callback' : callback, 'result' : { signature: sig.signature.toString('hex'), recovery: sig.recovery, hash: event.data.secp256k1Sign.hash } }, event.origin)
+      })
+    } else {
+      parent.postMessage({'callback' : callback, 'error' : 'unknown method'}, event.origin)
+      return
+    }
+  }
+  return
+}
+ 
 if (window.top == window.self) {
   setup().then(() => {
     console.log('Setup done')
