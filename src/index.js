@@ -56,9 +56,9 @@ function vaultInit(event) {
     }
   }
   else {
-    // okay so we aren't asked to trust origin but instead trust a cookie. make sure there's one
-    if ('originCookie' in event.data.init) {
-      var magiccookie = event.data.init.originCookie
+    // okay so we aren't asked to trust origin but instead trust a hash cookie. make sure there's one
+    if (location.hash.length > 0) {
+      var magiccookie = location.hash.slice(1)
       apphash = sessionStore.get('vault-cookie-' + magiccookie)
       sessionStore.remove('vault-cookie-' + magiccookie)
       if (apphash) {
@@ -76,6 +76,7 @@ function vaultInit(event) {
       }
     } else {
       parent.postMessage({'callback' : callback, 'error' : 'launch', 'launch' : location.href.split('#')[0], reason: 'not trusted nor cookie'}, event.origin)
+      return
     }
   }
   // okay, now we have apphash and pubex
@@ -174,9 +175,9 @@ function handleVaultMessage(event) {
     }
     // this doesn't give hardened keys for now
     if ('secp256k1KeyInfo' in event.data) {
-      // key { derive: 'M/0' } 
+      // key { derive: 'm/0' } 
       var callback = event.data.callback
-      var ahdkey = pubex_hd.derive(event.data.secp256k1KeyInfo.key.derive)
+      var ahdkey = pubex_hdkey.derive(event.data.secp256k1KeyInfo.key.derive)
       var pubkey = secp256k1.publicKeyConvert(ahdkey.publicKey, false)
       // SEC1 form return
       parent.postMessage({'callback' : callback, 'result' : { 'pubkey' : pubkey.toString('hex'), 'pubex' : ahdkey.publicExtendedKey }}, event.origin)
