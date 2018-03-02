@@ -59,9 +59,10 @@ function vaultInit(event) {
     // okay so we aren't asked to trust origin but instead trust a hash cookie. make sure there's one
     if (location.hash.length > 0) {
       var magiccookie = location.hash.slice(1)
-      apphash = sessionStore.get('vault-cookie-' + magiccookie)
+      var apph = sessionStore.get('vault-cookie-' + magiccookie)
       sessionStore.remove('vault-cookie-' + magiccookie)
-      if (apphash) {
+      if (apph) {
+        apphash = Buffer.from(apph, 'hex')
         pubex = store.get('pubex-' + apphash.toString('hex'))
         // redirection should have given a pubex already, else balk and send 'please re-launch' back
         if (pubex == null) {
@@ -97,7 +98,7 @@ async function getSeed() {
 
 async function getAppPrivEx() {
   let seed = await getSeed()
-  let hdkey = HDKey.fromMasterSeed(buf)
+  let hdkey = HDKey.fromMasterSeed(seed)
   let privex_hdkey = HDKey.fromExtendedKey(deriveWithHash(hdkey, apphash).privateExtendedKey)
   return privex_hdkey
 }
@@ -187,7 +188,7 @@ function handleVaultMessage(event) {
       
       // we need to grab a private key for this
       getAppPrivEx().then((privex_hdkey) => {
-        var from = privex.hdkey.derive(event.data.secp256k1Sign.key.derive)
+        var from = privex_hdkey.derive(event.data.secp256k1Sign.key.derive)
         var sig = secp256k1.sign(Buffer.from(event.data.secp256k1Sign.hash, 'hex'), from.privateKey)
         parent.postMessage({'callback' : callback, 'result' : { signature: sig.signature.toString('hex'), recovery: sig.recovery, hash: event.data.secp256k1Sign.hash } }, event.origin)
       })
