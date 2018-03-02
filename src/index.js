@@ -39,7 +39,7 @@ function vaultInit(event) {
   // if we aren't set up, ask to sign-in, give optional launch url
   if (store.get('vaultSetup') == null) {
     // request to sign in
-    parent.postMessage({'callback' : callback, 'result' : 'signin', launch: location.href.split('#')[0]}, event.origin)
+    parent.postMessage({'callback' : callback, 'error' : 'signin', 'launch' : location.href.split('#')[0]}, event.origin)
     return
   }
   
@@ -51,7 +51,7 @@ function vaultInit(event) {
     pubex = store.get('pubex-' + apphash.toString('hex'))
     if (pubex == null) {
       // balk and ask to re-launch, we need launcher to set pubex for us first time for now
-      parent.postMessage({'callback' : callback, 'result' : 'launch', launch : location.href.split('#')[0], reason: 'trust origin but no pubex'}, event.origin)
+      parent.postMessage({'callback' : callback, 'error' : 'launch', 'launch' : location.href.split('#')[0], reason: 'trust origin but no pubex'}, event.origin)
       return
     }
   }
@@ -66,16 +66,16 @@ function vaultInit(event) {
         // redirection should have given a pubex already, else balk and send 'please re-launch' back
         if (pubex == null) {
           // balk and send 'please re-launch' back
-          parent.postMessage({'callback' : callback, 'result' : 'launch', launch : location.href.split('#')[0], reason: 'valid cookie but no pubex'}, event.origin)
+          parent.postMessage({'callback' : callback, 'error' : 'launch', 'launch' : location.href.split('#')[0], reason: 'valid cookie but no pubex'}, event.origin)
           return
         }
       } else {
         // balk and send 'please re-launch' back
-        parent.postMessage({'callback' : callback, 'result' : 'launch', launch : location.href.split('#')[0], reason: 'no cookie'}, event.origin)
+        parent.postMessage({'callback' : callback, 'error' : 'launch', 'launch' : location.href.split('#')[0], reason: 'no cookie'}, event.origin)
         return
       }
     } else {
-      parent.postMessage({'callback' : callback, 'result' : 'launch', launch : location.href.split('#')[0], reason: 'not trusted nor cookie'}, event.origin)
+      parent.postMessage({'callback' : callback, 'error' : 'launch', 'launch' : location.href.split('#')[0], reason: 'not trusted nor cookie'}, event.origin)
     }
   }
   // okay, now we have apphash and pubex
