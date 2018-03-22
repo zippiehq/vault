@@ -91,7 +91,7 @@ function vaultInit(event) {
 
 async function getSeed() {
   // in real case this gets the other slice from the server and grabs seed for a moment
-  let nonce = await randomBuf(64)
+  let nonce = await randomBuf(32)
   let hash = shajs('sha256').update(nonce).digest()
   let sig = secp256k1.sign(hash, Buffer.from(store.get('authkey'), 'hex'))
   // XXX error handling
@@ -115,7 +115,7 @@ async function getSeed() {
   }
   let localkey = Buffer.from(store.get('localkey'), 'hex')
   let remoteslice_e = await eccrypto.decrypt(localkey, ciphertext2)
-  let remoteslice = Buffer.from(remoteslice_e)
+  let remoteslice = Buffer.from(remoteslice_e, 'utf8')
 
   let ciphertext1_dict = JSON.parse(store.get('localslice_e'))
   let ciphertext1 = {
@@ -124,7 +124,7 @@ async function getSeed() {
     ciphertext: Buffer.from(ciphertext1_dict.ciphertext, 'hex')
   }
   let localslice_e = await eccrypto.decrypt(localkey, ciphertext1)
-  let localslice = localslice_e.toString('hex')
+  let localslice = localslice_e.toString('utf8')
   var masterseed = Buffer.from(secrets.combine([localslice, remoteslice]), 'hex')
         
   // XXX some kind of checksum?
@@ -138,7 +138,7 @@ async function getAppPrivEx() {
   return privex_hdkey
 }
 
-function randomBuf(length = 64) {
+function randomBuf(length = 32) {
   return new Promise((resolve, reject) => {
     crypto.randomBytes(length, (err, buf) => {
       if (err) {
@@ -190,10 +190,11 @@ async function setup() {
     let masterseed = await randomBuf(64)
 
     // generate localkey as a outside-JS key ideally
-    let localkey = await randomBuf(64)
-    let authkey = await randomBuf(64)
-    let localpubkey = secp256k1.publicKeyCreate(localkey, true)
-    let authpubkey = secp256k1.publicKeyCreate(authkey, true)
+    let localkey = await randomBuf(32)
+    let authkey = await randomBuf(32)
+    let localpubkey = secp256k1.publicKeyCreate(localkey, false)
+
+    let authpubkey = secp256k1.publicKeyCreate(authkey, false)
 
     let hash = shajs('sha256').update('zipper-devices/initial').digest()
     
@@ -203,9 +204,8 @@ async function setup() {
     store.set('authkey', authkey.toString('hex'))
 
     var shares = secrets.share(masterseed.toString('hex'), 2, 2)
-    
-    let ciphertext1 = await eccrypto.encrypt(localpubkey, Buffer.from(shares[0], 'hex'))
-    let ciphertext2 = await eccrypto.encrypt(localpubkey, Buffer.from(shares[1], 'hex'))
+    let ciphertext1 = await eccrypto.encrypt(localpubkey, Buffer.from(shares[0], 'utf8'))
+    let ciphertext2 = await eccrypto.encrypt(localpubkey, Buffer.from(shares[1], 'utf8'))
     let ciphertext1_json = JSON.stringify({
       iv: ciphertext1.iv.toString('hex'), 
       ephemPublicKey: ciphertext1.ephemPublicKey.toString('hex'),
