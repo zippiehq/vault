@@ -1,8 +1,11 @@
 var HDKey = require('hdkey')
+var secrets = require('secrets.js-grempe')
 var secp256k1 = require('secp256k1')
 var shajs = require('sha.js')
 var store = require('store')
 const crypto = require('crypto');
+const eccrypto = require('eccrypto');
+const XMLHttpRequestPromise = require('xhr-promise')
 
 var sessionStoreEngine = require('store/storages/sessionStorage')
 var sessionStore = store.createStore(sessionStoreEngine)
@@ -88,12 +91,44 @@ function vaultInit(event) {
 
 async function getSeed() {
   // in real case this gets the other slice from the server and grabs seed for a moment
-  return new Promise(resolve => {
-    // simulate terrible network
-    setTimeout(() => {
-      resolve(Buffer.from(store.get('masterseed-NOPRODUCTION'), 'hex'))
-    }, 2000);
+  let nonce = await randomBuf(64)
+  let hash = shajs('sha256').update(nonce).digest()
+  let sig = secp256k1.sign(hash, Buffer.from(store.get('authkey'), 'hex'))
+  // XXX error handling
+  var fms_bundle = { 'hash': hash.toString('hex'), 'nonce' : nonce.toString('hex'), 'sig' : sig.signature, 'recovery' : sig.recovery }
+  var xmlhttp = new XMLHttpRequest()
+  var url = 'https://fms-dev.zipperglobal.com/fetch'
+  var xhrPromise = new XMLHttpRequestPromise()
+  let response = await xhrPromise.send({
+    'method': 'POST',
+    'url': url,
+    'headers': {
+      'Content-Type': 'application/json;charset=UTF-8'
+    },
+    'data': JSON.stringify(fms_bundle)
   })
+  let ciphertext2_dict = JSON.parse(response).data
+  let ciphertext2 = {
+    iv: Buffer.from(ciphertext2_dict.iv, 'hex'),
+    ephemPublicKey: Buffer.from(ciphertext2_dict.ephemPublicKey, 'hex'),
+    ciphertext: Buffer.from(ciphertext2_dict.ciphertext, 'hex')
+  }
+  let localkey = Buffer.from(store.get('localkey'), 'hex')
+  let remoteslice_e = await eccrypto.decrypt(localkey, ciphertext2)
+  let remoteslice = Buffer.from(remoteslice_e)
+
+  let ciphertext1_dict = JSON.parse(store.get('localslice_e'))
+  let ciphertext1 = {
+    iv: Buffer.from(ciphertext1_dict.iv, 'hex'),
+    ephemPublicKey: Buffer.from(ciphertext1_dict.ephemPublicKey, 'hex'),
+    ciphertext: Buffer.from(ciphertext1_dict.ciphertext, 'hex')
+  }
+  let localslice_e = await eccrypto.decrypt(localkey, ciphertext1)
+  let localslice = localslice_e.toString('hex')
+  var masterseed = Buffer.from(secrets.combine([localslice, remoteslice]), 'hex')
+        
+  // XXX some kind of checksum?
+  return seed
 }
 
 async function getAppPrivEx() {
@@ -101,6 +136,18 @@ async function getAppPrivEx() {
   let hdkey = HDKey.fromMasterSeed(seed)
   let privex_hdkey = HDKey.fromExtendedKey(deriveWithHash(hdkey, apphash).privateExtendedKey)
   return privex_hdkey
+}
+
+function randomBuf(length = 64) {
+  return new Promise((resolve, reject) => {
+    crypto.randomBytes(length, (err, buf) => {
+      if (err) {
+        reject(err)
+      } else {
+        resolve(buf)
+      }
+    })  
+  })
 }
 
 async function setup() {
@@ -127,39 +174,74 @@ async function setup() {
     }
     // we're now ready to launch
     // generate a one time cookie and redirect to the new uri + cookie
-    crypto.randomBytes(32, (err, buf) => {
-      if (err) {
-        throw err
-      }
-      var vaultcookie = buf.toString('hex')
-      sessionStore.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
-      // TODO: add deep return possible
-      window.location = uri + '#zipper-vault=' + location.href.split('#')[0] + '#' + vaultcookie
-      return
-    })
+    let cookie = await randomBuf(32)
+    var vaultcookie = buf.toString('hex')
+    sessionStore.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
+    // TODO: add deep return possible
+    window.location = uri + '#zipper-vault=' + location.href.split('#')[0] + '#' + vaultcookie
+    return
   } else if (location.hash.startsWith('#signup=')) {
     if (store.get('vaultSetup') != null) {
       alert('already setup')
       return
     }
     alert('signup ux')
-    // XXX ask if you have another device
-    crypto.randomBytes(64, (err, buf) => {
-      if (err) {
-        throw err
-      }
-      var hdkey = HDKey.fromMasterSeed(buf)
-      store.set('masterseed-NOPRODUCTION', buf.toString('hex'))
-      store.set('vaultSetup', 1)
+    // XXX ask if you have another device. if so, generate a localpubkey and a authpubkey and show it to the remote device.
+    let masterseed = await randomBuf(64)
 
-      // we're now done, now launching
-      var uri = location.hash.slice('#signup='.length)
-      window.location = location.href.split('#')[0] + '#launch=' + uri
-      window.location.reload()
+    // generate localkey as a outside-JS key ideally
+    let localkey = await randomBuf(64)
+    let authkey = await randomBuf(64)
+    let localpubkey = secp256k1.publicKeyCreate(localkey, true)
+    let authpubkey = secp256k1.publicKeyCreate(authkey, true)
+
+    let hash = shajs('sha256').update('zipper-devices/initial').digest()
+    
+    var revokepubkey = secp256k1.publicKeyConvert(deriveWithHash(HDKey.fromMasterSeed(masterseed), hash).derive('m/0').publicKey, false)
+    
+    store.set('localkey', localkey.toString('hex'))
+    store.set('authkey', authkey.toString('hex'))
+
+    var shares = secrets.share(masterseed.toString('hex'), 2, 2)
+    
+    let ciphertext1 = await eccrypto.encrypt(localpubkey, Buffer.from(shares[0], 'hex'))
+    let ciphertext2 = await eccrypto.encrypt(localpubkey, Buffer.from(shares[1], 'hex'))
+    let ciphertext1_json = JSON.stringify({
+      iv: ciphertext1.iv.toString('hex'), 
+      ephemPublicKey: ciphertext1.ephemPublicKey.toString('hex'),
+      ciphertext: ciphertext1.ciphertext.toString('hex')
     })
-    // show signup UX, generate keys
+    store.set('localslice_e', ciphertext1_json)
+
+    let ciphertext2_dict = {
+      iv: ciphertext2.iv.toString('hex'), 
+      ephemPublicKey: ciphertext2.ephemPublicKey.toString('hex'),
+      ciphertext: ciphertext2.ciphertext.toString('hex')
+    }
+    
+    // contact forgetme server and upload {authpubkey, ciphertext2_json, revokepubkey}
+    let forgetme_upload = JSON.stringify({'authpubkey' : authpubkey.toString('hex'), 'data': ciphertext2_dict, 'revokepubkey' : revokepubkey.toString('hex')})
+
+    var url = 'https://fms-dev.zipperglobal.com/store'
+    store.set('fms', url)
+    
+    var xhrPromise = new XMLHttpRequestPromise()
+    let response = await xhrPromise.send({
+       'method': 'POST',
+       'url': url,
+       'headers': {
+         'Content-Type': 'application/json;charset=UTF-8'
+       },
+       'data' : forgetme_upload
+    })
+    store.set('vaultSetup', 1)
+    // we're now done, now launching
+    var uri = location.hash.slice('#signup='.length)
+    window.location = location.href.split('#')[0] + '#launch=' + uri
+    window.location.reload()
+    // XXX add error handling
   } else {
-    alert('launched plainly, what now?')
+      alert('launched plainly, what now?')
   }
 }
 
