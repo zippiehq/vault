@@ -106,28 +106,30 @@ async function getSeed() {
     },
     'data': JSON.stringify(fms_bundle)
   })
-  let ciphertext2_dict = JSON.parse(response).data
+  let ciphertext2_dict = JSON.parse(response.responseText).data
+  console.log(ciphertext2_dict)
   let ciphertext2 = {
     iv: Buffer.from(ciphertext2_dict.iv, 'hex'),
     ephemPublicKey: Buffer.from(ciphertext2_dict.ephemPublicKey, 'hex'),
-    ciphertext: Buffer.from(ciphertext2_dict.ciphertext, 'hex')
+    ciphertext: Buffer.from(ciphertext2_dict.ciphertext, 'hex'),
+    mac: Buffer.from(ciphertext2_dict.mac, 'hex')
   }
   let localkey = Buffer.from(store.get('localkey'), 'hex')
   let remoteslice_e = await eccrypto.decrypt(localkey, ciphertext2)
-  let remoteslice = Buffer.from(remoteslice_e, 'utf8')
+  let remoteslice = remoteslice_e.toString('utf8')
 
   let ciphertext1_dict = JSON.parse(store.get('localslice_e'))
   let ciphertext1 = {
     iv: Buffer.from(ciphertext1_dict.iv, 'hex'),
     ephemPublicKey: Buffer.from(ciphertext1_dict.ephemPublicKey, 'hex'),
-    ciphertext: Buffer.from(ciphertext1_dict.ciphertext, 'hex')
+    ciphertext: Buffer.from(ciphertext1_dict.ciphertext, 'hex'),
+    mac: Buffer.from(ciphertext1_dict.mac, 'hex')
   }
   let localslice_e = await eccrypto.decrypt(localkey, ciphertext1)
   let localslice = localslice_e.toString('utf8')
   var masterseed = Buffer.from(secrets.combine([localslice, remoteslice]), 'hex')
-        
   // XXX some kind of checksum?
-  return seed
+  return masterseed
 }
 
 async function getAppPrivEx() {
@@ -174,7 +176,7 @@ async function setup() {
     // we're now ready to launch
     // generate a one time cookie and redirect to the new uri + cookie
     let cookie = await randomBuf(32)
-    var vaultcookie = buf.toString('hex')
+    var vaultcookie = cookie.toString('hex')
     sessionStore.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
     // TODO: add deep return possible
     window.location = uri + '#zipper-vault=' + location.href.split('#')[0] + '#' + vaultcookie
@@ -201,21 +203,22 @@ async function setup() {
     
     store.set('localkey', localkey.toString('hex'))
     store.set('authkey', authkey.toString('hex'))
-
     var shares = secrets.share(masterseed.toString('hex'), 2, 2)
     let ciphertext1 = await eccrypto.encrypt(localpubkey, Buffer.from(shares[0], 'utf8'))
     let ciphertext2 = await eccrypto.encrypt(localpubkey, Buffer.from(shares[1], 'utf8'))
     let ciphertext1_json = JSON.stringify({
       iv: ciphertext1.iv.toString('hex'), 
       ephemPublicKey: ciphertext1.ephemPublicKey.toString('hex'),
-      ciphertext: ciphertext1.ciphertext.toString('hex')
+      ciphertext: ciphertext1.ciphertext.toString('hex'),
+      mac: ciphertext1.mac.toString('hex')
     })
     store.set('localslice_e', ciphertext1_json)
 
     let ciphertext2_dict = {
       iv: ciphertext2.iv.toString('hex'), 
       ephemPublicKey: ciphertext2.ephemPublicKey.toString('hex'),
-      ciphertext: ciphertext2.ciphertext.toString('hex')
+      ciphertext: ciphertext2.ciphertext.toString('hex'),
+      mac: ciphertext2.mac.toString('hex')
     }
     
     // contact forgetme server and upload {authpubkey, ciphertext2_json, revokepubkey}
