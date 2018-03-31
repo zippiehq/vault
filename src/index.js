@@ -91,12 +91,11 @@ function vaultInit(event) {
 
 async function getSeed() {
   // in real case this gets the other slice from the server and grabs seed for a moment
-  let nonce = await randomBuf(32)
-  let hash = shajs('sha256').update(nonce).digest()
+  let timestamp = new Date()
+  let hash = shajs('sha256').update(timestamp.toString()).digest()
   let sig = secp256k1.sign(hash, Buffer.from(store.get('authkey'), 'hex'))
   // XXX error handling
-  var fms_bundle = { 'hash': hash.toString('hex'), 'nonce' : nonce.toString('hex'), 'sig' : sig.signature, 'recovery' : sig.recovery }
-  var xmlhttp = new XMLHttpRequest()
+  var fms_bundle = { 'hash': hash.toString('hex'), 'timestamp' : timestamp.toString(), 'sig' : sig.signature, 'recovery' : sig.recovery }
   var url = 'https://fms-dev.zipperglobal.com/fetch'
   var xhrPromise = new XMLHttpRequestPromise()
   let response = await xhrPromise.send({
