@@ -91,7 +91,7 @@ function vaultInit(event) {
 
 async function getSeed() {
   // in real case this gets the other slice from the server and grabs seed for a moment
-  let timestamp = new Date()
+  let timestamp = new Date().now()
   let hash = shajs('sha256').update(timestamp.toString()).digest()
   let sig = secp256k1.sign(hash, Buffer.from(store.get('authkey'), 'hex'))
   // XXX error handling
