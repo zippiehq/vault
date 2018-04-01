@@ -95,7 +95,7 @@ async function getSeed() {
   let hash = shajs('sha256').update(timestamp.toString()).digest()
   let sig = secp256k1.sign(hash, Buffer.from(store.get('authkey'), 'hex'))
   // XXX error handling
-  var fms_bundle = { 'hash': hash.toString('hex'), 'timestamp' : timestamp.toString(), 'sig' : sig.signature, 'recovery' : sig.recovery }
+  var fms_bundle = { 'hash': hash.toString('hex'), 'timestamp' : timestamp.toString(), 'sig' : sig.signature.toString('hex'), 'recovery' : sig.recovery }
   var url = 'https://fms-dev.zipperglobal.com/fetch'
   var xhrPromise = new XMLHttpRequestPromise()
   let response = await xhrPromise.send({
