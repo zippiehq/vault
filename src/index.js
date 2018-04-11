@@ -16,6 +16,8 @@ var apphash = null
 var pubex = null
 var pubex_hdkey = null
 
+var rootWindow = null
+
 // vault database (currently localstorage, should be indexeddb) contains:
 // cache of app hash -> app-pubex
 // device local private key
@@ -151,43 +153,12 @@ function randomBuf(length = 32) {
   })
 }
 
-async function setup() {
-  // we either:
-  // - launch a uri w/ a cookie for authentication towards an app-pubex
-  // - start a signup process and afterwards launch a uri as linked
-  if (location.hash.startsWith('#launch=')) {
-    // TODO: slice off the # in the end of target uri to allow deep returns but same context
-    var uri = location.hash.slice('#launch='.length)
-    if (store.get('vaultSetup') == null) {
-      window.location = location.href.split('#')[0] + '#signup=' + uri
-      window.location.reload()
-      return
-    }
-    document.getElementById('content').innerHTML = 'signing in with Zipper...'
-    apphash = shajs('sha256').update(uri).digest()
-    pubex = store.get('pubex-' + apphash.toString('hex'))
-    if (pubex == null) {
-       let seed = await getSeed()
-       var hdkey = HDKey.fromMasterSeed(seed)
-       pubex_hdkey = HDKey.fromExtendedKey(deriveWithHash(hdkey, apphash).publicExtendedKey)
-       pubex = pubex_hdkey.publicExtendedKey
-       store.set('pubex-' + apphash.toString('hex'), pubex)
-    }
-    // we're now ready to launch
-    // generate a one time cookie and redirect to the new uri + cookie
-    let cookie = await randomBuf(32)
-    var vaultcookie = cookie.toString('hex')
-    sessionStore.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
-    // TODO: add deep return possible
-    window.location = uri + '#zipper-vault=' + location.href.split('#')[0] + '#' + vaultcookie
+async function handleRootMessage(event) {
+  if (event.source != rootWindow)
+  {
     return
-  } else if (location.hash.startsWith('#signup=')) {
-    if (store.get('vaultSetup') != null) {
-      alert('already setup')
-      return
-    }
-    alert('signup ux')
-    // XXX ask if you have another device. if so, generate a localpubkey and a authpubkey and show it to the remote device.
+  }
+  if ('newidentity' in event.data) {
     let masterseed = await randomBuf(64)
 
     // generate localkey as a outside-JS key ideally
@@ -242,6 +213,51 @@ async function setup() {
     window.location = location.href.split('#')[0] + '#launch=' + uri
     window.location.reload()
     // XXX add error handling
+  }
+}
+
+async function setup() {
+  // we either:
+  // - launch a uri w/ a cookie for authentication towards an app-pubex
+  // - start a signup process and afterwards launch a uri as linked
+  if (location.hash.startsWith('#launch=')) {
+    // TODO: slice off the # in the end of target uri to allow deep returns but same context
+    var uri = location.hash.slice('#launch='.length)
+    if (store.get('vaultSetup') == null) {
+      window.location = location.href.split('#')[0] + '#signup=' + uri
+      window.location.reload()
+      return
+    }
+    document.getElementById('content').innerHTML = 'signing in with Zipper...'
+    apphash = shajs('sha256').update(uri).digest()
+    pubex = store.get('pubex-' + apphash.toString('hex'))
+    if (pubex == null) {
+       let seed = await getSeed()
+       var hdkey = HDKey.fromMasterSeed(seed)
+       pubex_hdkey = HDKey.fromExtendedKey(deriveWithHash(hdkey, apphash).publicExtendedKey)
+       pubex = pubex_hdkey.publicExtendedKey
+       store.set('pubex-' + apphash.toString('hex'), pubex)
+    }
+    // we're now ready to launch
+    // generate a one time cookie and redirect to the new uri + cookie
+    let cookie = await randomBuf(32)
+    var vaultcookie = cookie.toString('hex')
+    sessionStore.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
+    // TODO: add deep return possible
+    window.location = uri + '#zipper-vault=' + location.href.split('#')[0] + '#' + vaultcookie
+    return
+  } else if (location.hash.startsWith('#signup=')) {
+    if (store.get('vaultSetup') != null) {
+      alert('already setup')
+      return
+    }
+    // insert a iframe that can postmessage to us in a privileged manner
+    var iframe = document.createElement('iframe')
+    iframe.style.cssText = 'border: 0; position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%'
+    iframe.src = 'https://signup.zipperglobal.com' // switch to IPFS
+    document.body.appendChild(iframe)
+    rootWindow = iframe.contentWindow
+    window.addEventListener('message', handleRootMessage)
   } else {
       alert('launched plainly, what now?')
   }
