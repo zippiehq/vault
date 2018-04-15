@@ -65,6 +65,7 @@ function vaultInit(event) {
     if (location.hash.length > 0) {
       var magiccookie = location.hash.slice(1)
       var apph = sessionStore.get('vault-cookie-' + magiccookie)
+
       sessionStore.remove('vault-cookie-' + magiccookie)
       if (apph) {
         apphash = Buffer.from(apph, 'hex')
@@ -154,8 +155,7 @@ function randomBuf(length = 32) {
 }
 
 async function handleRootMessage(event) {
-  if (event.source != rootWindow)
-  {
+  if (event.source != rootWindow) {
     return
   }
   if ('newidentity' in event.data) {
@@ -168,7 +168,7 @@ async function handleRootMessage(event) {
 
     let authpubkey = secp256k1.publicKeyCreate(authkey, false)
 
-    let hash = shajs('sha256').update('zipper-devices/initial').digest()
+    let hash = shajs('sha256').update('zippie-devices/initial').digest()
     
     var revokepubkey = secp256k1.publicKeyConvert(deriveWithHash(HDKey.fromMasterSeed(masterseed), hash).derive('m/0').publicKey, false)
     
@@ -228,7 +228,7 @@ async function setup() {
       window.location.reload()
       return
     }
-    document.getElementById('content').innerHTML = 'signing in with Zipper...'
+    document.getElementById('content').innerHTML = 'signing in with Zippie...'
     apphash = shajs('sha256').update(uri).digest()
     pubex = store.get('pubex-' + apphash.toString('hex'))
     if (pubex == null) {
@@ -244,7 +244,7 @@ async function setup() {
     var vaultcookie = cookie.toString('hex')
     sessionStore.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
     // TODO: add deep return possible
-    window.location = uri + '#zipper-vault=' + location.href.split('#')[0] + '#' + vaultcookie
+    window.location = uri + '#zippie-vault=' + location.href.split('#')[0] + '#' + vaultcookie
     return
   } else if (location.hash.startsWith('#signup=')) {
     if (store.get('vaultSetup') != null) {
@@ -254,7 +254,7 @@ async function setup() {
     // insert a iframe that can postmessage to us in a privileged manner
     var iframe = document.createElement('iframe')
     iframe.style.cssText = 'border: 0; position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%'
-    iframe.src = 'https://signup.zipperglobal.com' // switch to IPFS
+    iframe.src = 'https://gateway.ipfs.io/ipfs/QmNpFoKAfmck2qAevFfTZ6FgXkhQJZzRJdbm6q67tF7qkc/' // XXX switch to IPFS
     document.body.appendChild(iframe)
     rootWindow = iframe.contentWindow
     window.addEventListener('message', handleRootMessage)
@@ -306,7 +306,7 @@ if (window.top == window.self) {
   })
 } else {
   // we're in an iframe, time to listen for commands
-  console.log('Zipper Vault listening')
+  console.log('Zippie Vault listening')
   window.addEventListener('message', handleVaultMessage)
   parent.postMessage({'ready' : true}, '*')
 }
