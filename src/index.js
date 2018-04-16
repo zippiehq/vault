@@ -99,7 +99,7 @@ async function getSeed() {
   let sig = secp256k1.sign(hash, Buffer.from(store.get('authkey'), 'hex'))
   // XXX error handling
   var fms_bundle = { 'hash': hash.toString('hex'), 'timestamp' : timestamp.toString(), 'sig' : sig.signature.toString('hex'), 'recovery' : sig.recovery }
-  var url = 'https://fms-dev.zipperglobal.com/fetch'
+  var url = 'https://fms.zippie.org/fetch'
   var xhrPromise = new XMLHttpRequestPromise()
   let response = await xhrPromise.send({
     'method': 'POST',
@@ -195,7 +195,7 @@ async function handleRootMessage(event) {
     // contact forgetme server and upload {authpubkey, ciphertext2_json, revokepubkey}
     let forgetme_upload = JSON.stringify({'authpubkey' : authpubkey.toString('hex'), 'data': ciphertext2_dict, 'revokepubkey' : revokepubkey.toString('hex')})
 
-    var url = 'https://fms-dev.zipperglobal.com/store'
+    var url = 'https://fms.zippie.org/store'
     store.set('fms', url)
     
     var xhrPromise = new XMLHttpRequestPromise()
