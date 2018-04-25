@@ -142,6 +142,18 @@ async function getAppPrivEx() {
   return privex_hdkey
 }
 
+function pbkdf2promisify(password, salt, iterations, keylen, digest) {
+  return new Promise((resolve, reject) => {
+    crypto.pbkdf2(password, salt, iterations, keylen, digest, (err, buf) => {
+      if (err) {
+        reject(err)
+      } else {
+        resolve(buf)
+      }
+    })
+  })
+}
+
 function randomBuf(length = 32) {
   return new Promise((resolve, reject) => {
     crypto.randomBytes(length, (err, buf) => {
@@ -158,7 +170,30 @@ async function handleRootMessage(event) {
   if (event.source != rootWindow) {
     return
   }
-  if ('newidentity' in event.data) {
+  if ('checkenrollment' in event.data) {
+    let salt = Buffer.from('3949edd685c135ed6599432db9bba8c433ca8ca99fcfca4504e80aa83d15f3c4', 'hex')
+    let derivedKey = await pbkdf2promisify(event.data.checkenrollment, salt, 100000, 32, 'sha512')
+
+    let timestamp = Date.now()
+    let hash = shajs('sha256').update(timestamp.toString()).digest()
+    let sig = secp256k1.sign(hash, Buffer.from(store.get('authkey'), 'hex'))
+    // XXX error handling
+    var fms_bundle = { 'hash': hash.toString('hex'), 'timestamp' : timestamp.toString(), 'sig' : sig.signature.toString('hex'), 'recovery' : sig.recovery }
+    var url = 'https://fms.zippie.org/fetch'
+    var xhrPromise = new XMLHttpRequestPromise()
+    try {
+      let response = await xhrPromise.send({
+        'method': 'POST',
+        'url': url,
+        'headers': {
+          'Content-Type': 'application/json;charset=UTF-8'
+        },
+        'data': JSON.stringify(fms_bundle)
+      })
+    } catch (e) {
+      
+    }
+  } else if ('newidentity' in event.data) {
     let masterseed = await randomBuf(64)
 
     // generate localkey as a outside-JS key ideally
@@ -196,7 +231,7 @@ async function handleRootMessage(event) {
     let forgetme_upload = JSON.stringify({'authpubkey' : authpubkey.toString('hex'), 'data': ciphertext2_dict, 'revokepubkey' : revokepubkey.toString('hex')})
 
     var url = 'https://fms.zippie.org/store'
-    store.set('fms', url)
+    store.set('fms', 'https://fms.zippie.org')
     
     var xhrPromise = new XMLHttpRequestPromise()
     let response = await xhrPromise.send({
@@ -244,7 +279,7 @@ async function setup() {
     var vaultcookie = cookie.toString('hex')
     sessionStore.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
     // TODO: add deep return possible
-    window.location = uri + '#zippie-vault=' + location.href.split('#')[0] + '#' + vaultcookie
+    window.location = uri.split('#')[0] + '#zippie-vault=' + location.href.split('#')[0] + '#' + vaultcookie
     return
   } else if (location.hash.startsWith('#signup=')) {
     if (store.get('vaultSetup') != null) {
@@ -259,7 +294,7 @@ async function setup() {
     rootWindow = iframe.contentWindow
     window.addEventListener('message', handleRootMessage)
   } else {
-      alert('launched plainly, what now?')
+      alert('launched v1 plainly, what now?')
   }
 }
 
