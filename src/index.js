@@ -252,7 +252,7 @@ async function handleRootMessage(event) {
     var derivedKey = await pbkdf2promisify(event.data.newidentity.email, salt, 100000, 32, 'sha512')
     var randomKey = await randomBuf(32)
     let derivedPubKey = secp256k1.publicKeyCreate(derivedKey, false)
-
+    store.set('useremail', event.data.newidentity.email)
     forgetme_upload = JSON.stringify({'authpubkey' : derivedPubKey.toString('hex'), 'data': {}, 'revokepubkey': randomKey.toString('hex')})
     var url = 'https://fms.zippie.org/store'
     var xhrPromise = new XMLHttpRequestPromise()
