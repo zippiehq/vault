@@ -64,9 +64,9 @@ function vaultInit(event) {
     // okay so we aren't asked to trust origin but instead trust a hash cookie. make sure there's one
     if (location.hash.length > 0) {
       var magiccookie = location.hash.slice(1)
-      var apph = sessionStore.get('vault-cookie-' + magiccookie)
-
-      sessionStore.remove('vault-cookie-' + magiccookie)
+      var apph = store.get('vault-cookie-' + magiccookie)
+      console.log('looked up ' + magiccookie + ' got ' + apph)
+      store.remove('vault-cookie-' + magiccookie)
       if (apph) {
         apphash = Buffer.from(apph, 'hex')
         pubex = store.get('pubex-' + apphash.toString('hex'))
@@ -172,11 +172,11 @@ async function handleRootMessage(event) {
   }
   if ('checkenrollment' in event.data) {
     let salt = Buffer.from('3949edd685c135ed6599432db9bba8c433ca8ca99fcfca4504e80aa83d15f3c4', 'hex')
-    let derivedKey = await pbkdf2promisify(event.data.checkenrollment, salt, 100000, 32, 'sha512')
+    let derivedKey = await pbkdf2promisify(event.data.checkenrollment.email, salt, 100000, 32, 'sha512')
 
     let timestamp = Date.now()
     let hash = shajs('sha256').update(timestamp.toString()).digest()
-    let sig = secp256k1.sign(hash, Buffer.from(store.get('authkey'), 'hex'))
+    let sig = secp256k1.sign(hash, derivedKey)
     // XXX error handling
     var fms_bundle = { 'hash': hash.toString('hex'), 'timestamp' : timestamp.toString(), 'sig' : sig.signature.toString('hex'), 'recovery' : sig.recovery }
     var url = 'https://fms.zippie.org/fetch'
@@ -190,8 +190,13 @@ async function handleRootMessage(event) {
         },
         'data': JSON.stringify(fms_bundle)
       })
+      if ('error' in JSON.parse(response.responseText)) {
+        event.source.postMessage({'enrollmentresult': 'no'}, event.origin)
+      } else {
+        event.source.postMessage({'enrollmentresult': 'yes'}, event.origin)
+      }
     } catch (e) {
-      
+      event.source.postMessage({'enrollmentresult': 'unknown'}, event.origin)
     }
   } else if ('newidentity' in event.data) {
     let masterseed = await randomBuf(64)
@@ -242,6 +247,25 @@ async function handleRootMessage(event) {
        },
        'data' : forgetme_upload
     })
+
+    var salt = Buffer.from('3949edd685c135ed6599432db9bba8c433ca8ca99fcfca4504e80aa83d15f3c4', 'hex')
+    var derivedKey = await pbkdf2promisify(event.data.newidentity.email, salt, 100000, 32, 'sha512')
+    var randomKey = await randomBuf(32)
+    let derivedPubKey = secp256k1.publicKeyCreate(derivedKey, false)
+
+    forgetme_upload = JSON.stringify({'authpubkey' : derivedPubKey.toString('hex'), 'data': {}, 'revokepubkey': randomKey.toString('hex')})
+    var url = 'https://fms.zippie.org/store'
+    var xhrPromise = new XMLHttpRequestPromise()
+    let response2 = await xhrPromise.send({
+      'method': 'POST',
+      'url': url,
+      'headers': {
+        'Content-Type': 'application/json;charset=UTF-8'
+      },
+      'data': forgetme_upload
+    })
+    // XXX error handling
+
     store.set('vaultSetup', 1)
     // we're now done, now launching
     var uri = location.hash.slice('#signup='.length)
@@ -277,7 +301,8 @@ async function setup() {
     // generate a one time cookie and redirect to the new uri + cookie
     let cookie = await randomBuf(32)
     var vaultcookie = cookie.toString('hex')
-    sessionStore.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
+    console.log('set vault cookie ' + vaultcookie + ' to ' + apphash.toString('hex'))
+    store.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
     // TODO: add deep return possible
     window.location = uri.split('#')[0] + '#zippie-vault=' + location.href.split('#')[0] + '#' + vaultcookie
     return
@@ -294,7 +319,7 @@ async function setup() {
     rootWindow = iframe.contentWindow
     window.addEventListener('message', handleRootMessage)
   } else {
-      alert('launched v1 plainly, what now?')
+      alert('launched v8 plainly, what now?')
   }
 }
 
