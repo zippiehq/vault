@@ -109,6 +109,11 @@ async function getSeed() {
     },
     'data': JSON.stringify(fms_bundle)
   })
+  if (response.status != 200)
+    throw JSON.stringify(response)
+  if ('error' in JSON.parse(response.responseText)) {
+    alert('Got error fetching from FMS')
+  }
   let ciphertext2_dict = JSON.parse(response.responseText).data
   console.log(ciphertext2_dict)
   let ciphertext2 = {
@@ -190,6 +195,8 @@ async function handleRootMessage(event) {
         },
         'data': JSON.stringify(fms_bundle)
       })
+      if (response.status != 200)
+        throw JSON.stringify(response)
       if ('error' in JSON.parse(response.responseText)) {
         event.source.postMessage({'enrollmentresult': 'no'}, event.origin)
       } else {
@@ -239,15 +246,24 @@ async function handleRootMessage(event) {
     store.set('fms', 'https://fms.zippie.org')
     
     var xhrPromise = new XMLHttpRequestPromise()
-    let response = await xhrPromise.send({
-       'method': 'POST',
-       'url': url,
-       'headers': {
-         'Content-Type': 'application/json;charset=UTF-8'
-       },
-       'data' : forgetme_upload
-    })
-
+    try {
+      let response = await xhrPromise.send({
+         'method': 'POST',
+         'url': url,
+         'headers': {
+           'Content-Type': 'application/json;charset=UTF-8'
+         },
+         'data' : forgetme_upload
+      })
+      if (response.status != 200)
+         throw 'Got error ' + JSON.stringify(response2)
+      let responsejson = JSON.parse(response.responseText)
+      if ('error' in responsejson)
+        throw error
+    } catch (err) {
+      alert('FMS store 1 failed, balking: ' + err)
+      return
+    }
     var salt = Buffer.from('3949edd685c135ed6599432db9bba8c433ca8ca99fcfca4504e80aa83d15f3c4', 'hex')
     var derivedKey = await pbkdf2promisify(event.data.newidentity.email, salt, 100000, 32, 'sha512')
     var randomKey = await randomBuf(32)
@@ -256,22 +272,29 @@ async function handleRootMessage(event) {
     forgetme_upload = JSON.stringify({'authpubkey' : derivedPubKey.toString('hex'), 'data': {}, 'revokepubkey': randomKey.toString('hex')})
     var url = 'https://fms.zippie.org/store'
     var xhrPromise = new XMLHttpRequestPromise()
-    let response2 = await xhrPromise.send({
-      'method': 'POST',
-      'url': url,
-      'headers': {
-        'Content-Type': 'application/json;charset=UTF-8'
-      },
-      'data': forgetme_upload
-    })
-    // XXX error handling
-
-    store.set('vaultSetup', 1)
-    // we're now done, now launching
-    var uri = location.hash.slice('#signup='.length)
-    window.location = location.href.split('#')[0] + '#launch=' + uri
-    window.location.reload()
-    // XXX add error handling
+    try {
+      let response2 = await xhrPromise.send({
+        'method': 'POST',
+        'url': url,
+        'headers': {
+          'Content-Type': 'application/json;charset=UTF-8'
+        },
+        'data': forgetme_upload
+      })
+      if (response2.status != 200)
+         throw 'Got error ' + JSON.stringify(response2)
+      let response2json = JSON.parse(response2.responseText)
+      if ('error' in response2json)
+        throw error
+      store.set('vaultSetup', 1)
+      // we're now done, now launching
+      var uri = location.hash.slice('#signup='.length)
+      window.location = location.href.split('#')[0] + '#launch=' + uri
+      window.location.reload()
+    } catch (err) {
+      alert('FMS upload 2 failed, balking: ' + err)
+      return
+    }
   }
 }
 
