@@ -302,7 +302,12 @@ async function setup() {
   // we either:
   // - launch a uri w/ a cookie for authentication towards an app-pubex
   // - start a signup process and afterwards launch a uri as linked
-  if (location.hash.startsWith('#launch=')) {
+  if (location.hash.startsWith('#wipe=')) {
+    if (confirm('Do you really want to wipe Zipper Vault? May cause data loss or money lost') == true) {
+      store.remove('vaultSetup')
+      alert('Vault wiped')
+    }
+  } else if (location.hash.startsWith('#launch=')) {
     // TODO: slice off the # in the end of target uri to allow deep returns but same context
     var uri = location.hash.slice('#launch='.length)
     if (store.get('vaultSetup') == null) {
@@ -343,6 +348,7 @@ async function setup() {
     window.addEventListener('message', handleRootMessage)
   } else {
       alert('launched v8 plainly, what now?')
+      
   }
 }
 
