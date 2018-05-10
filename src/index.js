@@ -243,6 +243,19 @@ async function handleRootMessage(event) {
     }
     event.source.postMessage({'deviceenrollmentresponse' : ciphertext1_dict}, event.origin)
     return
+  } else if ('finishenrollment' in event.data) {
+    // we get slice
+    if (store.get('devicePartiallySetup') == null) {
+      return
+    }
+    store.set('localslice_e', event.data.finishenrollment.localslice)
+    store.set('vaultSetup', 1)
+    // we should be able to do it now
+    let masterseed = getSeed()
+    // we're now done, now launching
+    var uri = location.hash.slice('#signup='.length)
+    window.location = location.href.split('#')[0] + '#launch=' + uri
+    window.location.reload()
   } else if ('checkenrollment' in event.data) {
     let salt = Buffer.from('3949edd685c135ed6599432db9bba8c433ca8ca99fcfca4504e80aa83d15f3c4', 'hex')
     let derivedKey = await pbkdf2promisify(event.data.checkenrollment.email, salt, 100000, 32, 'sha512')
