@@ -426,8 +426,16 @@ async function setup() {
     document.body.appendChild(iframe)
     rootWindow = iframe.contentWindow
     window.addEventListener('message', handleRootMessage)
+  } else if (location.hash.startsWith('#enroll=')) {
+    // insert a iframe that can postmessage to us in a privileged manner
+    var iframe = document.createElement('iframe')
+    iframe.style.cssText = 'border: 0; position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%'
+    iframe.src = 'https://signup.zippie.org/#/enroll/' + location.hash.split('#enroll=')[1] // XXX switch to IPFS
+    document.body.appendChild(iframe)
+    rootWindow = iframe.contentWindow
+    window.addEventListener('message', handleRootMessage)
   } else {
-      alert('launched v8 plainly, what now?')
+      alert('launched v9 plainly, what now?')
       
   }
 }
