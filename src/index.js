@@ -175,14 +175,81 @@ async function handleRootMessage(event) {
   if (event.source != rootWindow) {
     return
   }
-  if ('checkenrollment' in event.data) {
+  if ('enroleeinfo' in event.data) {
+    let localkey = await randomBuf(32)
+    let authkey = await randomBuf(32)
+    let localpubkey = secp256k1.publicKeyCreate(localkey, false)
+    let authpubkey = secp256k1.publicKeyCreate(authkey, false)
+    
+    store.set('localkey', localkey.toString('hex'))
+    store.set('authkey', authkey.toString('hex'))
+    store.set('devicePartiallySetup', 1)
+    event.source.postMessage({'deviceenroleeinfo' : { 'localpubkey' : localpubkey.toString('hex'), 'authpubkey' : authpubkey.toString('hex') } }, event.origin)
+    return    
+  }
+  if ('enrolldevice' in event.data) {
+    // we get: 
+    // - devicepubkey
+    // - authpubkey
+    // - device name
+    let devicepubkey = Buffer.from(event.data.enrolldevice.devicepubkey, 'hex')
+    let authpubkey = Buffer.from(event.data.enrolldevice.authpubkey, 'hex')
+    let devicename = event.data.enrolldevice.devicename
+    let hash = shajs('sha256').update('zippie-devices/' + devicename).digest()
+    
+    var revokepubkey = secp256k1.publicKeyConvert(deriveWithHash(HDKey.fromMasterSeed(masterseed), hash).derive('m/0').publicKey, false)
+
+    var masterseed = await getSeed()
+    var shares = secrets.share(masterseed.toString('hex'), 2, 2)
+    let ciphertext1 = await eccrypto.encrypt(devicepubkey, Buffer.from(shares[0], 'utf8'))
+    let ciphertext2 = await eccrypto.encrypt(devicepubkey, Buffer.from(shares[1], 'utf8'))
+
+    let ciphertext1_json = JSON.stringify({
+      iv: ciphertext1.iv.toString('hex'), 
+      ephemPublicKey: ciphertext1.ephemPublicKey.toString('hex'),
+      ciphertext: ciphertext1.ciphertext.toString('hex'),
+      mac: ciphertext1.mac.toString('hex')
+    })
+    // the above is shared to the enrollee
+    let ciphertext2_dict = {
+      iv: ciphertext2.iv.toString('hex'), 
+      ephemPublicKey: ciphertext2.ephemPublicKey.toString('hex'),
+      ciphertext: ciphertext2.ciphertext.toString('hex'),
+      mac: ciphertext2.mac.toString('hex')
+    }
+    
+    // contact forgetme server and upload {authpubkey, ciphertext2_json, revokepubkey}
+    let forgetme_upload = JSON.stringify({'authpubkey' : authpubkey.toString('hex'), 'data': ciphertext2_dict, 'revokepubkey' : revokepubkey.toString('hex')})
+
+    var url = 'https://fms.zippie.org/store'
+    var xhrPromise = new XMLHttpRequestPromise()
+    try {
+      let response = await xhrPromise.send({
+         'method': 'POST',
+         'url': url,
+         'headers': {
+           'Content-Type': 'application/json;charset=UTF-8'
+         },
+         'data' : forgetme_upload
+      })
+      if (response.status != 200)
+         throw 'Got error ' + JSON.stringify(response2)
+      let responsejson = JSON.parse(response.responseText)
+      if ('error' in responsejson)
+        throw error
+    } catch (err) {
+      alert('FMS store 1 (enroll) failed, balking: ' + err)
+      return
+    }
+    event.source.postMessage({'deviceenrollmentresponse' : ciphertext1_dict}, event.origin)
+    return
+  } else if ('checkenrollment' in event.data) {
     let salt = Buffer.from('3949edd685c135ed6599432db9bba8c433ca8ca99fcfca4504e80aa83d15f3c4', 'hex')
     let derivedKey = await pbkdf2promisify(event.data.checkenrollment.email, salt, 100000, 32, 'sha512')
 
     let timestamp = Date.now()
     let hash = shajs('sha256').update(timestamp.toString()).digest()
     let sig = secp256k1.sign(hash, derivedKey)
-    // XXX error handling
     var fms_bundle = { 'hash': hash.toString('hex'), 'timestamp' : timestamp.toString(), 'sig' : sig.signature.toString('hex'), 'recovery' : sig.recovery }
     var url = 'https://fms.zippie.org/fetch'
     var xhrPromise = new XMLHttpRequestPromise()
