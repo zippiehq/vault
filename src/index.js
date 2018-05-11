@@ -10,6 +10,10 @@ const XMLHttpRequestPromise = require('xhr-promise')
 var sessionStoreEngine = require('store/storages/sessionStorage')
 var sessionStore = store.createStore(sessionStoreEngine)
 
+// Configuration
+const fms_uri = 'https://fms.zippie.org'
+const signup_uri = 'https://signup.zippie.org'
+
 // vault per-session state
 var inited = false
 var apphash = null
@@ -99,7 +103,7 @@ async function getSeed() {
   let sig = secp256k1.sign(hash, Buffer.from(store.get('authkey'), 'hex'))
   // XXX error handling
   var fms_bundle = { 'hash': hash.toString('hex'), 'timestamp' : timestamp.toString(), 'sig' : sig.signature.toString('hex'), 'recovery' : sig.recovery }
-  var url = 'https://fms.zippie.org/fetch'
+  var url = fms_uri + '/fetch'
   var xhrPromise = new XMLHttpRequestPromise()
   let response = await xhrPromise.send({
     'method': 'POST',
@@ -221,7 +225,7 @@ async function handleRootMessage(event) {
     // contact forgetme server and upload {authpubkey, ciphertext2_json, revokepubkey}
     let forgetme_upload = JSON.stringify({'authpubkey' : authpubkey.toString('hex'), 'data': ciphertext2_dict, 'revokepubkey' : revokepubkey.toString('hex')})
 
-    var url = 'https://fms.zippie.org/store'
+    var url = fms_uri + '/store'
     var xhrPromise = new XMLHttpRequestPromise()
     try {
       let response = await xhrPromise.send({
@@ -264,7 +268,7 @@ async function handleRootMessage(event) {
     let hash = shajs('sha256').update(timestamp.toString()).digest()
     let sig = secp256k1.sign(hash, derivedKey)
     var fms_bundle = { 'hash': hash.toString('hex'), 'timestamp' : timestamp.toString(), 'sig' : sig.signature.toString('hex'), 'recovery' : sig.recovery }
-    var url = 'https://fms.zippie.org/fetch'
+    var url = fms_uri + '/fetch'
     var xhrPromise = new XMLHttpRequestPromise()
     try {
       let response = await xhrPromise.send({
@@ -322,8 +326,8 @@ async function handleRootMessage(event) {
     // contact forgetme server and upload {authpubkey, ciphertext2_json, revokepubkey}
     let forgetme_upload = JSON.stringify({'authpubkey' : authpubkey.toString('hex'), 'data': ciphertext2_dict, 'revokepubkey' : revokepubkey.toString('hex')})
 
-    var url = 'https://fms.zippie.org/store'
-    store.set('fms', 'https://fms.zippie.org')
+    var url = fms_uri + '/store'
+    store.set('fms', fms_uri)
     
     var xhrPromise = new XMLHttpRequestPromise()
     try {
@@ -350,7 +354,7 @@ async function handleRootMessage(event) {
     let derivedPubKey = secp256k1.publicKeyCreate(derivedKey, false)
     store.set('useremail', event.data.newidentity.email)
     forgetme_upload = JSON.stringify({'authpubkey' : derivedPubKey.toString('hex'), 'data': {}, 'revokepubkey': randomKey.toString('hex')})
-    var url = 'https://fms.zippie.org/store'
+    var url = fms_uri + '/store'
     var xhrPromise = new XMLHttpRequestPromise()
     try {
       let response2 = await xhrPromise.send({
@@ -422,7 +426,7 @@ async function setup() {
     // insert a iframe that can postmessage to us in a privileged manner
     var iframe = document.createElement('iframe')
     iframe.style.cssText = 'border: 0; position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%'
-    iframe.src = 'https://signup.zippie.org/' // XXX switch to IPFS
+    iframe.src = signup_uri // XXX switch to IPFS
     document.body.appendChild(iframe)
     rootWindow = iframe.contentWindow
     window.addEventListener('message', handleRootMessage)
@@ -430,7 +434,7 @@ async function setup() {
     // insert a iframe that can postmessage to us in a privileged manner
     var iframe = document.createElement('iframe')
     iframe.style.cssText = 'border: 0; position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%'
-    iframe.src = 'https://signup.zippie.org/#/enroll/' + location.hash.split('#enroll=')[1] // XXX switch to IPFS
+    iframe.src = signup_uri + '/#/enroll/' + location.hash.split('#enroll=')[1] // XXX switch to IPFS
     document.body.appendChild(iframe)
     rootWindow = iframe.contentWindow
     window.addEventListener('message', handleRootMessage)
