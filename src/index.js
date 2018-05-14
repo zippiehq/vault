@@ -11,8 +11,13 @@ var sessionStoreEngine = require('store/storages/sessionStorage')
 var sessionStore = store.createStore(sessionStoreEngine)
 
 // Configuration
-const fms_uri = 'https://fms.zippie.org'
-const signup_uri = 'https://signup.zippie.org'
+var fms_uri = 'https://fms.zippie.org'
+var signup_uri = 'https://signup.zippie.org'
+
+// If we're running in dev environment, use dev signup aswell.
+if (window.location.host === 'vault.dev.zippie.org') {
+  signup_uri = 'https://signup.dev.zippie.org'
+}
 
 // vault per-session state
 var inited = false
