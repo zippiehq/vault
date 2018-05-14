@@ -542,6 +542,35 @@ function handleVaultMessage(event) {
       var sig = secp256k1.sign(Buffer.from(event.data.secp256k1Sign.hash, 'hex'), from.privateKey)
       target.postMessage({'callback' : callback, 'result' : { signature: sig.signature.toString('hex'), recovery: sig.recovery, hash: event.data.secp256k1Sign.hash } }, event.origin)
     })
+  } else if ('secp256k1Encrypt' in event.data) {
+    var ecpub = Buffer.from(event.data.secp256k1Encrypt.pubkey, 'hex');
+    var plaintext = Buffer.from(event.data.secp256k1Encrypt.plaintext, 'hex');
+    eccrypto.encrypt(ecpub, plaintext)
+      .then(function (response) {
+        var rep = {
+          iv: response.iv.toString('hex'),
+          ephemPublicKey: response.ephemPublicKey.toString('hex'),
+          ciphertext: response.ciphertext.toString('hex'),
+          mac: response.mac.toString('hex')
+        }
+        target.postMessage({'callback' : callback, 'result' : rep }, event.origin)
+      })
+  } else if ('secp256k1Decrypt' in event.data) {
+    getAppPrivEx().then(privex_hdkey => {
+      var to = privex_hdkey.derive(event.data.secp256k1Decrypt.key.derive)
+      var ecpriv = to.privateKey
+      var response = {
+        iv: Buffer.from(event.data.secp256k1Decrypt.iv, 'hex'),
+        ephemPublicKey: Buffer.from(event.data.secp256k1Decrypt.ephemPublicKey, 'hex'),
+        ciphertext: Buffer.from(event.data.secp256k1Decrypt.ciphertext, 'hex'),
+        mac: Buffer.from(event.data.secp256k1Decrypt.mac, 'hex')
+      }
+
+      eccrypto.decrypt(ecpriv, response)
+        .then(function(buf) {
+          target.postMessage({'callback' : callback, 'result' : buf.toString('hex') }, event.origin);
+        })
+    })
   } else {
     target.postMessage({'callback' : callback, 'error' : 'unknown method'}, event.origin)
     return
