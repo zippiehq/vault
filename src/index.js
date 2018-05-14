@@ -21,6 +21,7 @@ var pubex = null
 var pubex_hdkey = null
 
 var rootWindow = null
+var iframed = false
 
 // vault database (currently localstorage, should be indexeddb) contains:
 // cache of app hash -> app-pubex
@@ -51,7 +52,7 @@ function vaultInit(event) {
     parent.postMessage({'callback' : callback, 'error' : 'signin', 'launch' : location.href.split('#')[0]}, event.origin)
     return
   }
-  
+
   if ('trustOrigin' in event.data.init) {
     // is this origin on our blacklist such as IPFS gateway, if so reject it and ask to be launched instead
     // but for now we just trust our browser
@@ -66,7 +67,25 @@ function vaultInit(event) {
   }
   else {
     // okay so we aren't asked to trust origin but instead trust a hash cookie. make sure there's one
-    if (location.hash.length > 0) {
+    if ('cookie' in event.data.init) {
+      var magiccookie = event.data.init.cookie
+      var apph = store.get('vault-cookie-' + magiccookie)
+
+      iframed = true
+
+      console.log('looked up ' + magiccookie + ' got ' + apph)
+      store.remove('vault-cookie-' + magiccookie)
+      if (apph) {
+        apphash = Buffer.from(apph, 'hex')
+        pubex = store.get('pubex-' + apphash.toString('hex'))
+        // redirection should have given a pubex already, else balk and send 'please re-launch' back
+        if (pubex == null) {
+          // balk and send 'please re-launch' back
+          rootWindow.postMessage({'callback' : callback, 'error' : 'launch', 'launch' : location.href.split('#')[0], reason: 'valid cookie but no pubex'}, event.origin)
+          return
+        }
+      }
+    } else if (location.hash.length > 0) {
       var magiccookie = location.hash.slice(1)
       var apph = store.get('vault-cookie-' + magiccookie)
       console.log('looked up ' + magiccookie + ' got ' + apph)
@@ -93,7 +112,11 @@ function vaultInit(event) {
   // okay, now we have apphash and pubex
   pubex_hdkey = HDKey.fromExtendedKey(pubex)
   inited = true
-  parent.postMessage({'callback' : callback, 'result' : 'inited'}, event.origin)
+  if (iframed) {
+    rootWindow.postMessage({'callback' : callback, 'result' : 'inited'}, event.origin)
+  } else {
+    parent.postMessage({'callback' : callback, 'result' : 'inited'}, event.origin)
+  }
 }
 
 async function getSeed() {
@@ -184,7 +207,7 @@ async function handleRootMessage(event) {
     let authkey = await randomBuf(32)
     let localpubkey = secp256k1.publicKeyCreate(localkey, false)
     let authpubkey = secp256k1.publicKeyCreate(authkey, false)
-    
+
     store.set('localkey', localkey.toString('hex'))
     store.set('authkey', authkey.toString('hex'))
     store.set('devicePartiallySetup', 1)
@@ -200,7 +223,7 @@ async function handleRootMessage(event) {
     let authpubkey = Buffer.from(event.data.enrolldevice.authpubkey, 'hex')
     let devicename = event.data.enrolldevice.devicename
     let hash = shajs('sha256').update('zippie-devices/' + devicename).digest()
-    
+
     var revokepubkey = secp256k1.publicKeyConvert(deriveWithHash(HDKey.fromMasterSeed(masterseed), hash).derive('m/0').publicKey, false)
 
     var masterseed = await getSeed()
@@ -221,7 +244,7 @@ async function handleRootMessage(event) {
       ciphertext: ciphertext2.ciphertext.toString('hex'),
       mac: ciphertext2.mac.toString('hex')
     }
-    
+
     // contact forgetme server and upload {authpubkey, ciphertext2_json, revokepubkey}
     let forgetme_upload = JSON.stringify({'authpubkey' : authpubkey.toString('hex'), 'data': ciphertext2_dict, 'revokepubkey' : revokepubkey.toString('hex')})
 
@@ -267,6 +290,7 @@ async function handleRootMessage(event) {
     let timestamp = Date.now()
     let hash = shajs('sha256').update(timestamp.toString()).digest()
     let sig = secp256k1.sign(hash, derivedKey)
+    // XXX error handling
     var fms_bundle = { 'hash': hash.toString('hex'), 'timestamp' : timestamp.toString(), 'sig' : sig.signature.toString('hex'), 'recovery' : sig.recovery }
     var url = fms_uri + '/fetch'
     var xhrPromise = new XMLHttpRequestPromise()
@@ -391,6 +415,39 @@ async function setup() {
       store.remove('vaultSetup')
       alert('Vault wiped')
     }
+  } else if (location.hash.startsWith('#iframe=')) {
+    var uri = location.hash.slice('#iframe='.length)
+    if (store.get('vaultSetup') == null) {
+      window.location = location.href.split('#')[0] + '#signup=' + uri
+      window.location.reload()
+      return
+    }
+
+    document.getElementById('content').innerHTML = 'signing in with Zippie...'
+    apphash = shajs('sha256').update(uri).digest()
+    pubex = store.get('pubex-' + apphash.toString('hex'))
+    if (pubex == null) {
+       let seed = await getSeed()
+       var hdkey = HDKey.fromMasterSeed(seed)
+       pubex_hdkey = HDKey.fromExtendedKey(deriveWithHash(hdkey, apphash).publicExtendedKey)
+       pubex = pubex_hdkey.publicExtendedKey
+       store.set('pubex-' + apphash.toString('hex'), pubex)
+    }
+    // we're now ready to launch
+    // generate a one time cookie and redirect to the new uri + cookie
+    let cookie = await randomBuf(32)
+    var vaultcookie = cookie.toString('hex')
+    console.log('set vault cookie ' + vaultcookie + ' to ' + apphash.toString('hex'))
+    store.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
+
+    var iframe = document.createElement('iframe')
+    iframe.style.cssText = 'border: 0; position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%'
+    iframe.src = uri.split('#')[0] + '#iframe=' + vaultcookie
+    document.body.appendChild(iframe)
+    rootWindow = iframe.contentWindow
+    window.addEventListener('message', handleVaultMessage)
+    return
+
   } else if (location.hash.startsWith('#launch=')) {
     // TODO: slice off the # in the end of target uri to allow deep returns but same context
     var uri = location.hash.slice('#launch='.length)
@@ -445,43 +502,47 @@ async function setup() {
 }
 
 function handleVaultMessage(event) {
-  if (event.source == parent)
-  {
-    // are we inited? if so, only accept one message, init
-    if ('init' in event.data && !inited) {
-      vaultInit(event);
-      return;
-    }
-    if (!inited) {
-      return
-    }
-    // this doesn't give hardened keys for now
-    if ('secp256k1KeyInfo' in event.data) {
-      // key { derive: 'm/0' } 
-      var callback = event.data.callback
-      var ahdkey = pubex_hdkey.derive(event.data.secp256k1KeyInfo.key.derive)
-      var pubkey = secp256k1.publicKeyConvert(ahdkey.publicKey, false)
-      // SEC1 form return
-      parent.postMessage({'callback' : callback, 'result' : { 'pubkey' : pubkey.toString('hex'), 'pubex' : ahdkey.publicExtendedKey }}, event.origin)
-    } else if ('secp256k1Sign' in event.data) {
-      // key { derive 'm/0' }
-      var callback = event.data.callback;
-      
-      // we need to grab a private key for this
-      getAppPrivEx().then((privex_hdkey) => {
-        var from = privex_hdkey.derive(event.data.secp256k1Sign.key.derive)
-        var sig = secp256k1.sign(Buffer.from(event.data.secp256k1Sign.hash, 'hex'), from.privateKey)
-        parent.postMessage({'callback' : callback, 'result' : { signature: sig.signature.toString('hex'), recovery: sig.recovery, hash: event.data.secp256k1Sign.hash } }, event.origin)
-      })
-    } else {
-      parent.postMessage({'callback' : callback, 'error' : 'unknown method'}, event.origin)
-      return
-    }
+  var target = parent
+
+  if (iframed) {
+    target = rootWindow
   }
-  return
+
+  // are we inited? if so, only accept one message, init
+  console.log('*** ' + JSON.stringify(event.data))
+  if ('init' in event.data && !inited) {
+    vaultInit(event);
+    return;
+  }
+  if (!inited) {
+    return
+  }
+
+  // this doesn't give hardened keys for now
+  if ('secp256k1KeyInfo' in event.data) {
+    // key { derive: 'm/0' }
+    var callback = event.data.callback
+    var ahdkey = pubex_hdkey.derive(event.data.secp256k1KeyInfo.key.derive)
+    var pubkey = secp256k1.publicKeyConvert(ahdkey.publicKey, false)
+    // SEC1 form return
+    target.postMessage({'callback' : callback, 'result' : { 'pubkey' : pubkey.toString('hex'), 'pubex' : ahdkey.publicExtendedKey }}, event.origin)
+  } else if ('secp256k1Sign' in event.data) {
+    // key { derive 'm/0' }
+    var callback = event.data.callback;
+
+    // we need to grab a private key for this
+    getAppPrivEx().then((privex_hdkey) => {
+      var from = privex_hdkey.derive(event.data.secp256k1Sign.key.derive)
+      var sig = secp256k1.sign(Buffer.from(event.data.secp256k1Sign.hash, 'hex'), from.privateKey)
+      target.postMessage({'callback' : callback, 'result' : { signature: sig.signature.toString('hex'), recovery: sig.recovery, hash: event.data.secp256k1Sign.hash } }, event.origin)
+    })
+  } else {
+    target.postMessage({'callback' : callback, 'error' : 'unknown method'}, event.origin)
+    return
+  }
 }
  
-if (window.top == window.self) {
+if (window.top == window.self || window.location.hash.startsWith('#iframe=')) {
   setup().then(() => {
     console.log('Setup done')
   })
