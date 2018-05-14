@@ -524,17 +524,17 @@ function handleVaultMessage(event) {
     return
   }
 
+  var callback = event.data.callback;
+
   // this doesn't give hardened keys for now
   if ('secp256k1KeyInfo' in event.data) {
     // key { derive: 'm/0' }
-    var callback = event.data.callback
     var ahdkey = pubex_hdkey.derive(event.data.secp256k1KeyInfo.key.derive)
     var pubkey = secp256k1.publicKeyConvert(ahdkey.publicKey, false)
     // SEC1 form return
     target.postMessage({'callback' : callback, 'result' : { 'pubkey' : pubkey.toString('hex'), 'pubex' : ahdkey.publicExtendedKey }}, event.origin)
   } else if ('secp256k1Sign' in event.data) {
     // key { derive 'm/0' }
-    var callback = event.data.callback;
 
     // we need to grab a private key for this
     getAppPrivEx().then((privex_hdkey) => {
