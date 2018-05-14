@@ -207,6 +207,7 @@ async function handleRootMessage(event) {
   if (event.source != rootWindow) {
     return
   }
+
   if ('enroleeinfo' in event.data) {
     let localkey = await randomBuf(32)
     let authkey = await randomBuf(32)
@@ -218,8 +219,7 @@ async function handleRootMessage(event) {
     store.set('devicePartiallySetup', 1)
     event.source.postMessage({'deviceenroleeinfo' : { 'localpubkey' : localpubkey.toString('hex'), 'authpubkey' : authpubkey.toString('hex') } }, event.origin)
     return    
-  }
-  if ('enrolldevice' in event.data) {
+  } else if ('enrolldevice' in event.data) {
     // we get: 
     // - devicepubkey
     // - authpubkey
@@ -227,21 +227,24 @@ async function handleRootMessage(event) {
     let devicepubkey = Buffer.from(event.data.enrolldevice.devicepubkey, 'hex')
     let authpubkey = Buffer.from(event.data.enrolldevice.authpubkey, 'hex')
     let devicename = event.data.enrolldevice.devicename
+    console.log(devicename)
     let hash = shajs('sha256').update('zippie-devices/' + devicename).digest()
 
+    var masterseed = await getSeed()
     var revokepubkey = secp256k1.publicKeyConvert(deriveWithHash(HDKey.fromMasterSeed(masterseed), hash).derive('m/0').publicKey, false)
 
-    var masterseed = await getSeed()
+    console.log('MASTERSEED:', masterseed)
     var shares = secrets.share(masterseed.toString('hex'), 2, 2)
+
     let ciphertext1 = await eccrypto.encrypt(devicepubkey, Buffer.from(shares[0], 'utf8'))
     let ciphertext2 = await eccrypto.encrypt(devicepubkey, Buffer.from(shares[1], 'utf8'))
 
-    let ciphertext1_json = JSON.stringify({
+    let ciphertext1_json = {
       iv: ciphertext1.iv.toString('hex'), 
       ephemPublicKey: ciphertext1.ephemPublicKey.toString('hex'),
       ciphertext: ciphertext1.ciphertext.toString('hex'),
       mac: ciphertext1.mac.toString('hex')
-    })
+    }
     // the above is shared to the enrollee
     let ciphertext2_dict = {
       iv: ciphertext2.iv.toString('hex'), 
@@ -265,7 +268,7 @@ async function handleRootMessage(event) {
          'data' : forgetme_upload
       })
       if (response.status != 200)
-         throw 'Got error ' + JSON.stringify(response2)
+         throw 'Got error ' + JSON.stringify(response)
       let responsejson = JSON.parse(response.responseText)
       if ('error' in responsejson)
         throw error
@@ -273,20 +276,24 @@ async function handleRootMessage(event) {
       alert('FMS store 1 (enroll) failed, balking: ' + err)
       return
     }
-    event.source.postMessage({'deviceenrollmentresponse' : ciphertext1_dict}, event.origin)
+    event.source.postMessage({'deviceenrollmentresponse' : ciphertext1_json}, event.origin)
     return
   } else if ('finishenrollment' in event.data) {
     // we get slice
     if (store.get('devicePartiallySetup') == null) {
       return
     }
-    store.set('localslice_e', event.data.finishenrollment.localslice)
+
+    let params = event.data.finishenrollment
+    store.set('localslice_e', JSON.stringify(params))
     store.set('vaultSetup', 1)
+
     // we should be able to do it now
     let masterseed = getSeed()
+    console.log('MASTERSEED:', masterseed)
+
     // we're now done, now launching
-    var uri = location.hash.slice('#signup='.length)
-    window.location = location.href.split('#')[0] + '#launch=' + uri
+    window.location = 'https://vault.dev.zippie.org/#iframe=https://my.dev.zippie.org' // FIXME: Desparately need better URI schemes.
     window.location.reload()
   } else if ('checkenrollment' in event.data) {
     let salt = Buffer.from('3949edd685c135ed6599432db9bba8c433ca8ca99fcfca4504e80aa83d15f3c4', 'hex')
