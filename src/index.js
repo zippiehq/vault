@@ -11,6 +11,8 @@ var sessionStoreEngine = require('store/storages/sessionStorage')
 var sessionStore = store.createStore(sessionStoreEngine)
 
 // Configuration
+var iframe_style = 'border: none; position: absolute; width: 100%; height: 100%'
+
 var fms_uri = 'https://fms.zippie.org'
 var signup_uri = 'https://signup.zippie.org'
 var my_uri = 'https://my.zippie.org'
@@ -458,9 +460,10 @@ async function setup() {
     store.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
 
     var iframe = document.createElement('iframe')
-    iframe.style.cssText = 'border: 0; position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%'
+    iframe.style.cssText = iframe_style
     iframe.allow = 'camera'
     iframe.src = uri.split('#')[0] + '#iframe=' + vaultcookie
+    document.body.innerHTML = ''
     document.body.appendChild(iframe)
     rootWindow = iframe.contentWindow
     window.addEventListener('message', handleVaultMessage)
@@ -500,16 +503,18 @@ async function setup() {
     }
     // insert a iframe that can postmessage to us in a privileged manner
     var iframe = document.createElement('iframe')
-    iframe.style.cssText = 'border: 0; position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%'
+    iframe.style.cssText = iframe_style
     iframe.src = signup_uri // XXX switch to IPFS
+    document.body.innerHTML = ''
     document.body.appendChild(iframe)
     rootWindow = iframe.contentWindow
     window.addEventListener('message', handleRootMessage)
   } else if (location.hash.startsWith('#enroll=')) {
     // insert a iframe that can postmessage to us in a privileged manner
     var iframe = document.createElement('iframe')
-    iframe.style.cssText = 'border: 0; position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%'
+    iframe.style.cssText = iframe_style
     iframe.src = signup_uri + '/#/enroll/' + location.hash.split('#enroll=')[1] // XXX switch to IPFS
+    document.body.innerHTML = ''
     document.body.appendChild(iframe)
     rootWindow = iframe.contentWindow
     window.addEventListener('message', handleRootMessage)
