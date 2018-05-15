@@ -13,10 +13,12 @@ var sessionStore = store.createStore(sessionStoreEngine)
 // Configuration
 var fms_uri = 'https://fms.zippie.org'
 var signup_uri = 'https://signup.zippie.org'
+var my_uri = 'https://my.zippie.org'
 
 // If we're running in dev environment, use dev signup aswell.
 if (window.location.host === 'vault.dev.zippie.org') {
   signup_uri = 'https://signup.dev.zippie.org'
+  my_uri = 'https://my.dev.zippie.org'
 }
 
 // vault per-session state
@@ -296,7 +298,7 @@ async function handleRootMessage(event) {
     console.log('MASTERSEED:', masterseed)
 
     // we're now done, now launching
-    window.location = 'https://vault.dev.zippie.org/#iframe=https://my.dev.zippie.org' // FIXME: Desparately need better URI schemes.
+    window.location = 'https://' + window.location.host + '/#iframe=' + my_uri
     window.location.reload()
   } else if ('checkenrollment' in event.data) {
     let salt = Buffer.from('3949edd685c135ed6599432db9bba8c433ca8ca99fcfca4504e80aa83d15f3c4', 'hex')
