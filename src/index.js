@@ -208,7 +208,10 @@ async function handleRootMessage(event) {
     return
   }
 
-  if ('enroleeinfo' in event.data) {
+  if ('qrscan' in event.data) {
+    window.location = 'https://qrscan.io/'
+    window.reload()
+  } else if ('enroleeinfo' in event.data) {
     let localkey = await randomBuf(32)
     let authkey = await randomBuf(32)
     let localpubkey = secp256k1.publicKeyCreate(localkey, false)
@@ -533,8 +536,11 @@ function handleVaultMessage(event) {
 
   var callback = event.data.callback;
 
-  // this doesn't give hardened keys for now
-  if ('secp256k1KeyInfo' in event.data) {
+  if ('qrscan' in event.data) {
+    window.location = 'https://qrscan.io/'
+    window.reload()
+  } else  if ('secp256k1KeyInfo' in event.data) {
+    // this doesn't give hardened keys for now
     // key { derive: 'm/0' }
     var ahdkey = pubex_hdkey.derive(event.data.secp256k1KeyInfo.key.derive)
     var pubkey = secp256k1.publicKeyConvert(ahdkey.publicKey, false)
