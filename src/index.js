@@ -11,8 +11,15 @@ var sessionStoreEngine = require('store/storages/sessionStorage')
 var sessionStore = store.createStore(sessionStoreEngine)
 
 // Configuration
-const fms_uri = 'https://fms.zippie.org'
-const signup_uri = 'https://signup.zippie.org'
+var fms_uri = 'https://fms.zippie.org'
+var signup_uri = 'https://signup.zippie.org'
+var my_uri = 'https://my.zippie.org'
+
+// If we're running in dev environment, use dev signup aswell.
+if (window.location.host === 'vault.dev.zippie.org') {
+  signup_uri = 'https://signup.dev.zippie.org'
+  my_uri = 'https://my.dev.zippie.org'
+}
 
 // vault per-session state
 var inited = false
@@ -202,7 +209,11 @@ async function handleRootMessage(event) {
   if (event.source != rootWindow) {
     return
   }
-  if ('enroleeinfo' in event.data) {
+
+  if ('qrscan' in event.data) {
+    window.location = 'https://qrscan.io/'
+    window.reload()
+  } else if ('enroleeinfo' in event.data) {
     let localkey = await randomBuf(32)
     let authkey = await randomBuf(32)
     let localpubkey = secp256k1.publicKeyCreate(localkey, false)
@@ -213,8 +224,7 @@ async function handleRootMessage(event) {
     store.set('devicePartiallySetup', 1)
     event.source.postMessage({'deviceenroleeinfo' : { 'localpubkey' : localpubkey.toString('hex'), 'authpubkey' : authpubkey.toString('hex') } }, event.origin)
     return    
-  }
-  if ('enrolldevice' in event.data) {
+  } else if ('enrolldevice' in event.data) {
     // we get: 
     // - devicepubkey
     // - authpubkey
@@ -222,21 +232,24 @@ async function handleRootMessage(event) {
     let devicepubkey = Buffer.from(event.data.enrolldevice.devicepubkey, 'hex')
     let authpubkey = Buffer.from(event.data.enrolldevice.authpubkey, 'hex')
     let devicename = event.data.enrolldevice.devicename
+    console.log(devicename)
     let hash = shajs('sha256').update('zippie-devices/' + devicename).digest()
 
+    var masterseed = await getSeed()
     var revokepubkey = secp256k1.publicKeyConvert(deriveWithHash(HDKey.fromMasterSeed(masterseed), hash).derive('m/0').publicKey, false)
 
-    var masterseed = await getSeed()
+    console.log('MASTERSEED:', masterseed)
     var shares = secrets.share(masterseed.toString('hex'), 2, 2)
+
     let ciphertext1 = await eccrypto.encrypt(devicepubkey, Buffer.from(shares[0], 'utf8'))
     let ciphertext2 = await eccrypto.encrypt(devicepubkey, Buffer.from(shares[1], 'utf8'))
 
-    let ciphertext1_json = JSON.stringify({
+    let ciphertext1_json = {
       iv: ciphertext1.iv.toString('hex'), 
       ephemPublicKey: ciphertext1.ephemPublicKey.toString('hex'),
       ciphertext: ciphertext1.ciphertext.toString('hex'),
       mac: ciphertext1.mac.toString('hex')
-    })
+    }
     // the above is shared to the enrollee
     let ciphertext2_dict = {
       iv: ciphertext2.iv.toString('hex'), 
@@ -260,7 +273,7 @@ async function handleRootMessage(event) {
          'data' : forgetme_upload
       })
       if (response.status != 200)
-         throw 'Got error ' + JSON.stringify(response2)
+         throw 'Got error ' + JSON.stringify(response)
       let responsejson = JSON.parse(response.responseText)
       if ('error' in responsejson)
         throw error
@@ -268,20 +281,24 @@ async function handleRootMessage(event) {
       alert('FMS store 1 (enroll) failed, balking: ' + err)
       return
     }
-    event.source.postMessage({'deviceenrollmentresponse' : ciphertext1_dict}, event.origin)
+    event.source.postMessage({'deviceenrollmentresponse' : ciphertext1_json}, event.origin)
     return
   } else if ('finishenrollment' in event.data) {
     // we get slice
     if (store.get('devicePartiallySetup') == null) {
       return
     }
-    store.set('localslice_e', event.data.finishenrollment.localslice)
+
+    let params = event.data.finishenrollment
+    store.set('localslice_e', JSON.stringify(params))
     store.set('vaultSetup', 1)
+
     // we should be able to do it now
     let masterseed = getSeed()
+    console.log('MASTERSEED:', masterseed)
+
     // we're now done, now launching
-    var uri = location.hash.slice('#signup='.length)
-    window.location = location.href.split('#')[0] + '#launch=' + uri
+    window.location = 'https://' + window.location.host + '/#iframe=' + my_uri
     window.location.reload()
   } else if ('checkenrollment' in event.data) {
     let salt = Buffer.from('3949edd685c135ed6599432db9bba8c433ca8ca99fcfca4504e80aa83d15f3c4', 'hex')
@@ -442,6 +459,7 @@ async function setup() {
 
     var iframe = document.createElement('iframe')
     iframe.style.cssText = 'border: 0; position:fixed; top:0; left:0; right:0; bottom:0; width:100%; height:100%'
+    iframe.allow = 'camera'
     iframe.src = uri.split('#')[0] + '#iframe=' + vaultcookie
     document.body.appendChild(iframe)
     rootWindow = iframe.contentWindow
@@ -518,23 +536,55 @@ function handleVaultMessage(event) {
     return
   }
 
-  // this doesn't give hardened keys for now
-  if ('secp256k1KeyInfo' in event.data) {
+  var callback = event.data.callback;
+
+  if ('qrscan' in event.data) {
+    window.location = 'https://qrscan.io/'
+    window.reload()
+  } else  if ('secp256k1KeyInfo' in event.data) {
+    // this doesn't give hardened keys for now
     // key { derive: 'm/0' }
-    var callback = event.data.callback
     var ahdkey = pubex_hdkey.derive(event.data.secp256k1KeyInfo.key.derive)
     var pubkey = secp256k1.publicKeyConvert(ahdkey.publicKey, false)
     // SEC1 form return
     target.postMessage({'callback' : callback, 'result' : { 'pubkey' : pubkey.toString('hex'), 'pubex' : ahdkey.publicExtendedKey }}, event.origin)
   } else if ('secp256k1Sign' in event.data) {
     // key { derive 'm/0' }
-    var callback = event.data.callback;
 
     // we need to grab a private key for this
     getAppPrivEx().then((privex_hdkey) => {
       var from = privex_hdkey.derive(event.data.secp256k1Sign.key.derive)
       var sig = secp256k1.sign(Buffer.from(event.data.secp256k1Sign.hash, 'hex'), from.privateKey)
       target.postMessage({'callback' : callback, 'result' : { signature: sig.signature.toString('hex'), recovery: sig.recovery, hash: event.data.secp256k1Sign.hash } }, event.origin)
+    })
+  } else if ('secp256k1Encrypt' in event.data) {
+    var ecpub = Buffer.from(event.data.secp256k1Encrypt.pubkey, 'hex');
+    var plaintext = Buffer.from(event.data.secp256k1Encrypt.plaintext, 'hex');
+    eccrypto.encrypt(ecpub, plaintext)
+      .then(function (response) {
+        var rep = {
+          iv: response.iv.toString('hex'),
+          ephemPublicKey: response.ephemPublicKey.toString('hex'),
+          ciphertext: response.ciphertext.toString('hex'),
+          mac: response.mac.toString('hex')
+        }
+        target.postMessage({'callback' : callback, 'result' : rep }, event.origin)
+      })
+  } else if ('secp256k1Decrypt' in event.data) {
+    getAppPrivEx().then(privex_hdkey => {
+      var to = privex_hdkey.derive(event.data.secp256k1Decrypt.key.derive)
+      var ecpriv = to.privateKey
+      var response = {
+        iv: Buffer.from(event.data.secp256k1Decrypt.iv, 'hex'),
+        ephemPublicKey: Buffer.from(event.data.secp256k1Decrypt.ephemPublicKey, 'hex'),
+        ciphertext: Buffer.from(event.data.secp256k1Decrypt.ciphertext, 'hex'),
+        mac: Buffer.from(event.data.secp256k1Decrypt.mac, 'hex')
+      }
+
+      eccrypto.decrypt(ecpriv, response)
+        .then(function(buf) {
+          target.postMessage({'callback' : callback, 'result' : buf.toString('hex') }, event.origin);
+        })
     })
   } else {
     target.postMessage({'callback' : callback, 'error' : 'unknown method'}, event.origin)
