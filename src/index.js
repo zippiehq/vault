@@ -295,10 +295,6 @@ async function handleRootMessage(event) {
     store.set('localslice_e', JSON.stringify(params))
     store.set('vaultSetup', 1)
 
-    // we should be able to do it now
-    let masterseed = getSeed()
-    console.log('MASTERSEED:', masterseed)
-
     // we're now done, now launching
     window.location = 'https://' + window.location.host + '/#iframe=' + my_uri
     window.location.reload()
@@ -435,7 +431,7 @@ async function setup() {
       alert('Vault wiped')
     }
   } else if (location.hash.startsWith('#iframe=')) {
-    var uri = location.hash.slice('#iframe='.length)
+    var uri = location.hash.slice('#iframe='.length).replace(/\/$/, '')
     if (store.get('vaultSetup') == null) {
       window.location = location.href.split('#')[0] + '#signup=' + uri
       window.location.reload()
@@ -471,7 +467,7 @@ async function setup() {
 
   } else if (location.hash.startsWith('#launch=')) {
     // TODO: slice off the # in the end of target uri to allow deep returns but same context
-    var uri = location.hash.slice('#launch='.length)
+    var uri = location.hash.slice('#launch='.length).replace(/\/$/, '')
     if (store.get('vaultSetup') == null) {
       window.location = location.href.split('#')[0] + '#signup=' + uri
       window.location.reload()
