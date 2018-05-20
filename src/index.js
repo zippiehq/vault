@@ -427,7 +427,7 @@ async function setup() {
   // - start a signup process and afterwards launch a uri as linked
   if (location.hash.startsWith('#wipe=')) {
     if (confirm('Do you really want to wipe Zipper Vault? May cause data loss or money lost') == true) {
-      store.remove('vaultSetup')
+      store.clearAll()
       alert('Vault wiped')
     }
   } else if (location.hash.startsWith('#iframe=')) {
