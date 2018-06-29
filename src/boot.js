@@ -2,6 +2,8 @@ const api = require('./api.js')
 const vault = require('./vault.js')
 const version = require('../version.js')
 
+const store = require('store')
+
 var worker
 
 const VAULT_MESSAGE_HANDLERS = [
@@ -66,6 +68,25 @@ window.addEventListener('load', function () {
         .then(r => {
           console.log("Service worker version:", r.result)
         })
+
+      // Migrate from LocalStorage to ServiceWorker IndexedDB
+      let doStoreMigration = store.get('vaultSetup')
+      if (doStoreMigration) {
+        let keys = [
+          'authkey', 'localkey', 'localslice_e', 'vaultSetup'
+        ]
+
+        console.log("CL: Migrating identity from LocalStorage to IndexedDB")
+        for (var i = 0; i < keys.length; i++) {
+          let key = keys[i]
+
+          VaultChannel.request({'store.set': {
+            key: key,
+            value: store.get(key)}
+          })
+        }
+        store.clearAll()
+      }
 
       if (window.top == window.self || window.location.hash.startsWith('#iframe=')) {
         vault.setup().then(() => {
