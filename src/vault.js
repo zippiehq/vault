@@ -6,9 +6,6 @@ const crypto = require('crypto');
 const eccrypto = require('eccrypto');
 const XMLHttpRequestPromise = require('xhr-promise')
 
-//var sessionStoreEngine = require('store/storages/sessionStorage')
-//var sessionStore = store.createStore(sessionStoreEngine)
-
 // Configuration
 var iframe_style = 'border: none; position: absolute; width: 100%; height: 100%'
 
