@@ -404,7 +404,7 @@ const store = {
   },
 
   clearAll: function () {
-    throw 'NOT IMPLEMENTED YET'
+    return window.VaultChannel.request({'store.clearAll': null})
   }
 }
 
