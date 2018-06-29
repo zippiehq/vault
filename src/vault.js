@@ -1,3 +1,24 @@
+/*
+ * Copyright (c) 2018 Zippie Ltd.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+*/
 var HDKey = require('hdkey')
 var secrets = require('secrets.js-grempe')
 var secp256k1 = require('secp256k1')
@@ -5,6 +26,14 @@ var shajs = require('sha.js')
 const crypto = require('crypto');
 const eccrypto = require('eccrypto');
 const XMLHttpRequestPromise = require('xhr-promise')
+
+// vault database contains:
+// cache of app hash -> app-pubex
+// device local private key
+// device authentication private key
+// seed piece 1 out of 2 (2of2) encrypted with device local private key
+// forgetme server url if non-standard
+
 
 // Configuration
 var iframe_style = 'border: none; position: absolute; width: 100%; height: 100%'
@@ -25,38 +54,8 @@ var apphash = null
 var pubex = null
 var pubex_hdkey = null
 
+var params = {}
 var iframed = false
-
-// vault database (currently localstorage, should be indexeddb) contains:
-// cache of app hash -> app-pubex
-// device local private key
-// device authentication private key
-// seed piece 1 out of 2 (2of2) encrypted with device local private key
-// forgetme server url if non-standard
-
-function randomBuf(length = 32) {
-  return new Promise((resolve, reject) => {
-    crypto.randomBytes(length, (err, buf) => {
-      if (err) {
-        reject(err)
-      } else {
-        resolve(buf)
-      }
-    })  
-  })
-}
-
-function pbkdf2promisify(password, salt, iterations, keylen, digest) {
-  return new Promise((resolve, reject) => {
-    crypto.pbkdf2(password, salt, iterations, keylen, digest, (err, buf) => {
-      if (err) {
-        reject(err)
-      } else {
-        resolve(buf)
-      }
-    })
-  })
-}
 
 // an app-pubex is calculated by taking private extended key of root + some derivation, always hardened +
 //   [for every 32 bit of the 256-bit hash, take the hardended child of index (value integer divided with 2^31) and then the hardened child of index (value integer mod 2^31)
@@ -100,7 +99,7 @@ function vaultInit(event) {
       // Read magic cookie from message parameters or location hash
       var magiccookie;
 
-      if ('cookie' in  event.data.init) {
+      if ('cookie' in event.data.init) {
         console.log('Using cookie in init message.')
         magiccookie = event.data.init.cookie
         iframed = true
@@ -202,7 +201,6 @@ function getSeed() {
       let localkey
       let ciphertext2
       let remoteslice
-      
 
       return store.get('localkey')
         .then(async function (r) {
@@ -256,7 +254,7 @@ async function getAppPrivEx() {
 }
 
 export function setup() {
-  if (location.hash.startsWith('#wipe=') && confirm('Do you really want to wipe Zipper Vault? May cause data loss or money lost') === true) {
+  if (location.hash.startsWith('#wipe=') && confirm('Do you really want to wipe Zippie Vault? May cause data loss or money lost') === true) {
     return store.clearAll()
       .then(_ => {
         alert('Vault wiped')
@@ -266,22 +264,40 @@ export function setup() {
       })
   }
 
+  // Variables for parameter processing
+  let hash = window.location.hash
+
+  // Process URI fragment part for vault params
+  if (hash.indexOf('?') !== -1) {
+    let p = hash.split('?')[1].split(';')
+
+    for (var i = 0; i < p.length; i++) {
+      var kv = p[i].split('=')
+      params[kv[0]] = kv[1]
+    }
+
+    // Strip params from URI fragment part
+    //window.location.hash = hash.slice(0, hash.indexOf('?'))
+  }
+
+  console.log('Vault Parameters:', params)
+
   // we either:
   // - launch a uri w/ a cookie for authentication towards an app-pubex
   // - start a signup process and afterwards launch a uri as linked
-  if (location.hash.startsWith('#iframe=')) {
-    var uri = location.hash.slice('#iframe='.length).replace(/\/$/, '')
+  if (params['iframe'] !== undefined) {
+    let uri = params['iframe']
 
     return store.get('vaultSetup')
       .then(function(r) {
         if (r.result === undefined || r.result.value === undefined) {
-          window.location = location.href.split('#')[0] + '#signup=' + uri
+          window.location = location.href.split('/#')[0] + '/#?signup=' + uri
           window.location.reload()
         }
 
         // TODO: Implement a nicer loading page.
         document.getElementById('content').innerHTML = 'Signing in with Zippie...'
-        apphash = shajs('sha256').update(uri).digest()
+        apphash = shajs('sha256').update(uri.split('/#')[0]).digest()
 
         return store.get('pubex-' + apphash.toString('hex'))
       })
@@ -302,35 +318,40 @@ export function setup() {
         pubex = r.result.value
       })
       .then(async function() {
-        let cookie = await randomBuf(32)
+        let cookie = crypto.randomBytes(32)
         let vaultcookie = cookie.toString('hex')
 
         return store.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
           .then(function() {
             var iframe = document.createElement('iframe')
-            iframe.style.cssText = iframe_style
+
             iframe.allow = 'camera'
-            iframe.src = uri.split('#')[0] + '#iframe=' + vaultcookie
+            iframe.style.cssText = iframe_style
+
+            if (uri.indexOf('#') === -1) uri += '#'
+            iframe.src = uri + '?iframe=' + vaultcookie
+
             document.body.innerHTML = ''
             document.body.appendChild(iframe)
             return
           })
       })
 
-  } else if (location.hash.startsWith('#launch=')) {
+  } else if (params['launch'] !== undefined) {
     // TODO: slice off the # in the end of target uri to allow deep returns but same context
-    var uri = location.hash.slice('#launch='.length).replace(/\/$/, '')
+    let uri = params['launch']
+    console.log('Launching:', uri)
 
     return store.get('vaultSetup')
       .then(function(r) {
         if (r.result === undefined || r.result.value === undefined) {
-          window.location = location.href.split('#')[0] + '#signup=' + uri
+          window.location.hash = '#?signup=' + uri
           window.location.reload()
           return
         }
 
-        document.getElementById('content').innerHTML = 'Signing in  with Zippie...'
-        apphash = shajs('sha256').update(uri).digest()
+        document.getElementById('content').innerHTML = 'Signing in with Zippie...'
+        apphash = shajs('sha256').update(uri.split('/#')[0]).digest()
         return store.get('pubex-' + apphash.toString('hex'))
       })
       .then(function(r) {
@@ -350,16 +371,17 @@ export function setup() {
         pubex = r.result.value
       })
       .then(async function() {
-        let cookie = await randomBuf(32)
+        let cookie = crypto.randomBytes(32)
         let vaultcookie = cookie.toString('hex')
 
         return store.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
           .then(_ => {
-            window.location = uri.split('#')[0] + '#zippie-vault=' + location.href.split('#')[0] + '#' + vaultcookie
+            if (uri.indexOf('#') === -1) uri += '#'
+            window.location = uri + '?zippie-vault=' + location.href.split('#')[0] + '#' + vaultcookie
           })
       })
 
-  } else if (location.hash.startsWith('#signup=')) {
+  } else if (params['signup'] !== undefined) {
     return store.get('vaultSetup')
       .then(function(r) {
         if (r.result != undefined && r.result.value === 1) {
@@ -374,11 +396,14 @@ export function setup() {
         document.body.appendChild(iframe)
       })
 
-  } else if (location.hash.startsWith('#enroll=')) {
+  } else if (params['enroll'] !== undefined) {
     // insert a iframe that can postmessage to us in a privileged manner
     var iframe = document.createElement('iframe')
     iframe.style.cssText = iframe_style
-    iframe.src = signup_uri + '/#/enroll/' + location.hash.split('#enroll=')[1] // XXX switch to IPFS
+
+    // XXX switch to IPFS
+    iframe.src = signup_uri + '/#/enroll/' + params['enroll']
+
     document.body.innerHTML = ''
     document.body.appendChild(iframe)
 
@@ -412,7 +437,7 @@ const store = {
 // Generate secp256k1 key helper
 //
 async function secp256k1GenerateKey () {
-  let key = await randomBuf(32)
+  let key = crypto.randomBytes(32)
   let pub = secp256k1.publicKeyCreate(key, false)
   return {privateKey: key, publicKey: pub}
 }
@@ -536,8 +561,8 @@ export class RootMessageHandler {
       store.set('localslice_e', JSON.stringify(params)),
       store.set('vaultSetup', 1)
     ]).then(_ => {
-      // we're now done, now launching
-      window.location = 'https://' + window.location.host + '/#iframe=' + my_uri
+      // we're now done, launch home
+      window.location = my_uri
       window.location.reload()
     }).catch(e => {
       console.error('Error in finishenrollment storing vault data:', e)
@@ -549,7 +574,7 @@ export class RootMessageHandler {
   //
   async checkenrollment (event) {
     let salt = Buffer.from('3949edd685c135ed6599432db9bba8c433ca8ca99fcfca4504e80aa83d15f3c4', 'hex')
-    let derivedKey = await pbkdf2promisify(event.data.checkenrollment.email, salt, 100000, 32, 'sha512')
+    let derivedKey = crypto.pbkdf2Sync(event.data.checkenrollment.email, salt, 100000, 32, 'sha512')
 
     let timestamp = Date.now()
     let hash = shajs('sha256').update(timestamp.toString()).digest()
@@ -582,19 +607,19 @@ export class RootMessageHandler {
   // newidentity
   //
   async newidentity (event) {
-    let masterseed = await randomBuf(64)
+    let masterseed = crypto.randomBytes(32)
 
     // generate localkey as a outside-JS key ideally
+    console.log('Generating local and auth key.')
     let local = await secp256k1GenerateKey()
     let auth = await secp256k1GenerateKey()
 
     let hash = shajs('sha256').update('zippie-devices/initial').digest()
-    
-    var revokepubkey = secp256k1.publicKeyConvert(deriveWithHash(HDKey.fromMasterSeed(masterseed), hash).derive('m/0').publicKey, false)
-    
-    store.set('localkey', local.privateKey.toString('hex'))
-    store.set('authkey', auth.privateKey.toString('hex'))
 
+    console.log('Generating revoke key.')
+    var revokepubkey = secp256k1.publicKeyConvert(deriveWithHash(HDKey.fromMasterSeed(masterseed), hash).derive('m/0').publicKey, false)
+
+    console.log('Encrypting remote and local slices.')
     var shares = secrets.share(masterseed.toString('hex'), 2, 2)
     let ciphertext1 = await eccrypto.encrypt(local.publicKey, Buffer.from(shares[0], 'utf8'))
     let ciphertext2 = await eccrypto.encrypt(local.publicKey, Buffer.from(shares[1], 'utf8'))
@@ -605,7 +630,6 @@ export class RootMessageHandler {
       ciphertext: ciphertext1.ciphertext.toString('hex'),
       mac: ciphertext1.mac.toString('hex')
     })
-    store.set('localslice_e', ciphertext1_json)
 
     let ciphertext2_dict = {
       iv: ciphertext2.iv.toString('hex'), 
@@ -618,21 +642,21 @@ export class RootMessageHandler {
     let forgetme_upload = JSON.stringify({
       'authpubkey' : auth.publicKey.toString('hex'),
       'data': ciphertext2_dict,
-      'revokepubkey' : revokepubkey.toString('hex')
+      'revokepubkey': revokepubkey.toString('hex')
     })
 
     var url = fms_uri + '/store'
-    store.set('fms', fms_uri)
     
     var xhrPromise = new XMLHttpRequestPromise()
     try {
+      console.log('Storing remote slice')
       let response = await xhrPromise.send({
          'method': 'POST',
          'url': url,
          'headers': {
            'Content-Type': 'application/json;charset=UTF-8'
          },
-         'data' : forgetme_upload
+         'data': forgetme_upload
       })
       if (response.status != 200)
          throw 'Got error ' + JSON.stringify(response2)
@@ -644,12 +668,14 @@ export class RootMessageHandler {
       return
     }
 
+    /*
     var salt = Buffer.from('3949edd685c135ed6599432db9bba8c433ca8ca99fcfca4504e80aa83d15f3c4', 'hex')
-    var derivedKey = await pbkdf2promisify(event.data.newidentity.email, salt, 100000, 32, 'sha512')
-    var randomKey = await randomBuf(32)
+    console.log('Generating revoke authkey')
+    var derivedKey = crypto.pbkdf2Sync(event.data.newidentity.email, salt, 10000, 32, 'sha512')
+    console.log('Generating revoke key')
+    var randomKey = crypto.randomBytes(32)
 
     let derivedPubKey = secp256k1.publicKeyCreate(derivedKey, false)
-    store.set('useremail', event.data.newidentity.email)
     forgetme_upload = JSON.stringify({
       'authpubkey' : derivedPubKey.toString('hex'),
       'data': {},
@@ -659,6 +685,7 @@ export class RootMessageHandler {
     var url = fms_uri + '/store'
     var xhrPromise = new XMLHttpRequestPromise()
     try {
+      console.log('Storing revokation key')
       let response2 = await xhrPromise.send({
         'method': 'POST',
         'url': url,
@@ -673,16 +700,30 @@ export class RootMessageHandler {
       if ('error' in response2json)
         throw error
 
-      store.set('vaultSetup', 1)
-      // we're now done, now launching
-
-      var uri = location.hash.slice('#signup='.length)
-      window.location = location.href.split('#')[0] + '#launch=' + uri
-      window.location.reload()
     } catch (err) {
-      alert('FMS upload 2 failed, balking: ' + err)
+      alert('FMS upload 2 failed, balking: ' + JSON.stringify(err))
       return
-    }
+    }*/
+
+    console.log('Storing local identity into vault')
+    return Promise.all([
+        store.set('localkey', local.privateKey.toString('hex')),
+        store.set('authkey', auth.privateKey.toString('hex')),
+        store.set('localslice_e', ciphertext1_json),
+        store.set('fms', fms_uri),
+        store.set('useremail', event.data.newidentity.email),
+        store.set('vaultSetup', 1)
+      ])
+      .then(_ => {
+        // we're now done, launching
+        console.log('Identity created, redirecting...')
+        let uri = params['signup']
+        window.location = location.href.split('#')[0] + '#?launch=' + uri
+        window.location.reload()
+      })
+      .catch(e => {
+        console.error('Error storing identity locally:', e)
+      })
   }
 
   respondsTo (event) {
