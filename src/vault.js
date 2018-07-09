@@ -551,23 +551,25 @@ export class RootMessageHandler {
   //
   finishenrollment (event) {
     // we get slice
-    if (store.get('devicePartiallySetup') == null) {
-      return
-    }
+    store.get('devicePartiallySetup')
+      .then(r => {
+        if (r.result != undefined && r.result.value !== 1) {
+          return
+        }
 
-    let params = event.data.finishenrollment
+        let params = event.data.finishenrollment
 
-    Promise.all([
-      store.set('localslice_e', JSON.stringify(params)),
-      store.set('vaultSetup', 1)
-    ]).then(_ => {
-      // we're now done, launch home
-      window.location = my_uri
-      window.location.reload()
-    }).catch(e => {
-      console.error('Error in finishenrollment storing vault data:', e)
-      
-    })
+        return Promise.all([
+          store.set('localslice_e', JSON.stringify(params)),
+          store.set('vaultSetup', 1)
+        ]).then(_ => {
+          // we're now done, launch home
+          window.location = my_uri
+        })
+        .catch(e => {
+          console.error('Error in finishenrollment storing vault data:', e)
+        })
+      })
   }
 
   // checkenrollment
