@@ -12,6 +12,7 @@
   "dependencies": {
     "eccrypto": "^1.0.3",
     "hdkey": "^0.8.0",
+    "js-cookie": "^2.2.0",
     "secp256k1": "^3.5.0",
     "secrets.js-grempe": "^1.1.0",
     "sha.js": "^2.4.10",
