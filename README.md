@@ -27,8 +27,12 @@ npm install
 npm run build
 ```
 
+
 ### Development
-serve locally
+```bash
+npm run build-dev
+npm run dev
+```
 
 ### Production
 set up web host with HTTPS
