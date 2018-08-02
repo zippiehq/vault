@@ -49,6 +49,9 @@ var my_uri = 'https://my.zippie.org'
 if (window.location.host === 'vault.dev.zippie.org') {
   signup_uri = 'https://signup.dev.zippie.org'
   my_uri = 'https://my.dev.zippie.org'
+} else if (window.location.host === 'vault.testing.zippie.org') {
+  signup_uri = 'https://signup.testing.zippie.org'
+  my_uri = 'https://my.testing.zippie.org'
 }
 
 // vault per-session state
