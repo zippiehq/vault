@@ -159,7 +159,7 @@ function initSW () {
             value: store.get(key)}
           })
         }
-        store.clearAll()
+        //store.clearAll()
       }
 
       console.log('Zippie Vault Version:', version)
