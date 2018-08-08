@@ -33,9 +33,62 @@ const VAULT_MESSAGE_HANDLERS = [
 ]
 
 //
-// Worker initialization
+// Webkit ITP 2.0 Support
+//
+function requestStorage () {
+  return document.requestStorageAccess()
+    .then(
+      function () {
+        console.log('ITP: Storage access granted!')
+        // Post vault ready.
+        console.log('Zippie Vault ready.')
+        parent.postMessage({ready: true}, '*')
+      },
+      function () {
+        console.error('ITP: Storage access denied!')
+        parent.postMessage({error: 'ITP 2.0 Storage Access Denied'}, '*')
+      })
+}
+
+//
+// Webkit ITP 2.0 Support
 //
 window.addEventListener('load', function () {
+  if (window.top == window.self || window.location.hash.startsWith('#iframe=')) {
+    return vault.setup().then(() => {
+      console.log('Zippie Vault setup.')
+    })
+  }
+
+  if (document.hasStorageAccess !== undefined) {
+    console.log('ITP 2.0 browser support detected, checking storage status.')
+    return document.hasStorageAccess()
+      .then(
+        r => {
+          if (r === false) {
+            console.log('Vault does not have storage access, notifying client.')
+            return parent.postMessage({login: null}, '*')
+          }
+
+          // Post vault ready.
+          console.log('Zippie Vault ready.')
+          parent.postMessage({ready : true}, '*')
+        },
+        e => {
+          console.error('Vault hasStorageAccess:', e)
+        }
+      )
+  }
+
+  // Post vault ready.
+  console.log('Zippie Vault ready.')
+  parent.postMessage({ready : true}, '*')
+})
+
+//
+// Initialise Vault Service Worker
+//
+function initSW () {
   if (!('serviceWorker' in navigator)) {
     console.error('SERVICE WORKERS NOT SUPPORTED IN THIS BROWSER!')
     return
@@ -106,32 +159,27 @@ window.addEventListener('load', function () {
             value: store.get(key)}
           })
         }
-        store.clearAll()
+        //store.clearAll()
       }
 
       console.log('Zippie Vault Version:', version)
-
-      if (window.top == window.self || window.location.hash.startsWith('#iframe=')) {
-        vault.setup().then(() => {
-          console.log('Setup done')
-        })
-      } else {
-        // we're in an iframe, time to listen for commands
-        console.log('Zippie Vault listening')
-        parent.postMessage({'ready' : true}, '*')
-      }
     })
     .catch(function (error) {
       console.error('Failed to register service worker:', error)
       return
     })
-})
+}
 
 //
-// Worker incoming message dispatcher
+// Vault message dispatcher
 //
 self.addEventListener('message', function (event) {
   console.log('CL: message received:', event.data)
+
+  // Called by parent when the user presses the "Zippie Signin" button.
+  if ('login' in event.data) {
+    return requestStorage()
+  }
 
   for (var i = 0; i < VAULT_MESSAGE_HANDLERS.length; i++) {
     var handler = VAULT_MESSAGE_HANDLERS[i]

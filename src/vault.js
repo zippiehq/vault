@@ -19,6 +19,8 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
 */
+const Cookie = require('js-cookie')
+
 var HDKey = require('hdkey')
 var secrets = require('secrets.js-grempe')
 var secp256k1 = require('secp256k1')
@@ -26,6 +28,7 @@ var shajs = require('sha.js')
 const crypto = require('crypto');
 const eccrypto = require('eccrypto');
 const XMLHttpRequestPromise = require('xhr-promise')
+const storeplain = require('store')
 
 // vault database contains:
 // cache of app hash -> app-pubex
@@ -46,6 +49,9 @@ var my_uri = 'https://my.zippie.org'
 if (window.location.host === 'vault.dev.zippie.org') {
   signup_uri = 'https://signup.dev.zippie.org'
   my_uri = 'https://my.dev.zippie.org'
+} else if (window.location.host === 'vault.testing.zippie.org') {
+  signup_uri = 'https://signup.testing.zippie.org'
+  my_uri = 'https://my.testing.zippie.org'
 }
 
 // vault per-session state
@@ -72,29 +78,78 @@ function deriveWithHash(hdkey, hash) {
 
 function vaultInit(event) {
   var callback = event.data.callback
+  var magiccookie
+
+  if ('cookie' in event.data.init) {
+    console.log('Using cookie in init message.')
+    magiccookie = Buffer.from(event.data.init.cookie, 'hex')
+
+  } else if (location.hash.length > 0) {
+    console.log('Using cookie in URI hash')
+    magiccookie = Buffer.from(location.hash.slice(1), 'hex')
+  }
+
+  // Decode cookie
+  let vdata = Cookie.get('v-data')
+  console.log("Vault Data:", vdata)
+
+  if (vdata === undefined) {
+      console.error('No vault data cookie.')
+      return event.source.postMessage({
+        'callback': callback,
+        'error': 'launch',
+        'launch': location.href.split('#')[0],
+        'reason': 'No vault data cookie.'
+      }, '*')
+  }
+
+  if (vdata !== undefined) {
+    if (magiccookie === undefined) {
+      console.error('No magiccookie supplied!')
+      return event.source.postMessage({
+        'callback': callback,
+        'error': 'launch',
+        'launch': location.href.split('#')[0],
+        'reason': 'No magic cookie.'
+      }, '*')
+    }
+
+    vdata = JSON.parse(vdata)
+    console.log('VV Key', magiccookie)
+    // Decrypt vdata, populate local storage and continue.
+    let cipher = crypto.createDecipheriv('aes-256-cbc', magiccookie, Buffer.from(vdata.iv, 'hex'))
+    let b1 = cipher.update(Buffer.from(vdata.text, 'hex'))
+    let b2 = cipher.final()
+
+    vdata = JSON.parse(Buffer.concat([b1, b2]).toString('utf8'))
+    console.log('VV DECRYPTED:', vdata)
+
+    store.set('localkey', vdata.localkey),
+    store.set('authkey', vdata.authkey),
+    store.set('localslice_e', vdata.localslice_e),
+    store.set('vaultSetup', 1)    
+  }
 
   // Read vault identity setup flag
   store.get('vaultSetup')
     .then(function(r) {
       // Error with signup if no identity setup
-      if (r.result === undefined || r.result.value !== 1) {
+      if ((r.result === undefined || r.result.value !== 1)) {
         return Promise.reject({error: 'signin', reason: 'signin'})
       }
     })
     .then(function() {
-      if ('trustOrigin' in event.data.init) {
-        apphash = shajs('sha256').update(event.origin).digest()
+      apphash = shajs('sha256').update(event.origin).digest()
 
-        return store.get('pubex-' + apphash.toString('hex'))
-          .then(function(r) {
-            if (r.result === undefined) {
-              return Promise.reject({
-                error: 'launch',
-                reason: 'trust origin but no pubex'
-              })
-            }
-          })
-      }
+      return getSeed()
+        .then(seed => {
+          let hdkey = HDKey.fromMasterSeed(seed)
+          pubex_hdkey = HDKey.fromExtendedKey(
+            deriveWithHash(hdkey, apphash).publicExtendedKey
+          )
+
+          pubex = pubex_hdkey.publicExtendedKey
+        })
 
       // Read magic cookie from message parameters or location hash
       var magiccookie;
@@ -370,9 +425,47 @@ export function setup() {
 
         pubex = r.result.value
       })
-      .then(async function() {
+      .then(function () {
+        let localkey
+        let authkey
+        let localslice
+
+        console.log('VV: Setting up cookie data')
+        return Promise.all([
+            store.get('localkey').then(r => { localkey = r.result.value }),
+            store.get('authkey').then(r => { authkey = r.result.value }),
+            store.get('localslice_e').then(r => {localslice = r.result.value })
+          ])
+          .then(function() {
+            return Promise.resolve({
+              localkey: localkey,
+              authkey: authkey,
+              localslice_e: localslice
+            })
+          })
+          .catch(e => {
+            console.error('VV', e)
+          })
+      })
+      .then(async function(vdata) {
+        let iv = crypto.randomBytes(16)
         let cookie = crypto.randomBytes(32)
         let vaultcookie = cookie.toString('hex')
+
+        console.log('Encrypting identity cookie.')
+        let cipher = crypto.createCipheriv('aes-256-cbc', cookie, iv)
+        let b1 = cipher.update(Buffer.from(JSON.stringify(vdata), 'utf8'))
+        let b2 = cipher.final()
+
+        console.log('Setting identity cookie.')
+        Cookie.set(
+          'v-data',
+          JSON.stringify({
+            iv: iv.toString('hex'),
+            text: Buffer.concat([b1, b2]).toString('hex')
+          }),
+          {secure: true}
+        )
 
         return store.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
           .then(_ => {
@@ -413,8 +506,30 @@ export function setup() {
 }
 
 //
+// Local storage adapter
+//
+const store = {
+  get: function (key) {
+    return Promise.resolve({ result: { value: storeplain.get(key)}})
+  },
+
+  set: function (key, value) {
+    return Promise.resolve(storeplain.set(key, value))
+  },
+
+  remove: function (key) {
+    return Promise.resolve(storeplain.remove(key))
+  },
+
+  clearAll: function () {
+    return Promise.resolve(storeplain.clearAll())
+  }
+}
+
+//
 // Vault storage adapter
 //
+/*
 const store = {
   get: function (key) {
     return window.VaultChannel.request({'store.get': {key: key}})
@@ -432,6 +547,7 @@ const store = {
     return window.VaultChannel.request({'store.clearAll': null})
   }
 }
+*/
 
 //
 // Generate secp256k1 key helper
@@ -772,7 +888,8 @@ export class RootMessageHandler {
 //
 export class VaultMessageHandler {
   init (event) {
-    if (!inited) vaultInit(event)
+    if (inited) return
+    vaultInit(event)
   }
 
   qrscan (event) {
