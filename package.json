@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "build": "webpack",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build-dev": "webpack; openssl req -x509 -newkey rsa:4096 -nodes -keyout config/key.pem -out config/cert.pem -days 365 -subj \"/C=US/ST=./L=./O=./CN=.\"",
+    "dev": "webpack; cd dist; http-server -p 8443 -S -K ../key.pem -C ../cert.pem -o"
   },
   "author": "",
   "license": "ISC",
@@ -22,6 +23,7 @@
     "xhr-promise": "^2.0.0"
   },
   "devDependencies": {
+    "http-server": "^0.11.1",
     "@babel/core": "^7.0.0-beta.47",
     "@babel/preset-env": "^7.0.0-beta.47",
     "babel-loader": "^8.0.0-beta.3",
