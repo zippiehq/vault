@@ -43,14 +43,17 @@ var iframe_style = 'border: none; position: absolute; width: 100%; height: 100%'
 
 var fms_uri = 'https://fms.zippie.org'
 var signup_uri = 'https://signup.zippie.org'
+var zippiecard_uri = 'https://card.zippie.org'
 var my_uri = 'https://my.zippie.org'
 
 // If we're running in dev environment, use dev signup aswell.
 if (window.location.host === 'vault.dev.zippie.org') {
   signup_uri = 'https://signup.dev.zippie.org'
+  zippiecard_uri = 'https://card.dev.zippie.org'
   my_uri = 'https://my.dev.zippie.org'
 } else if (window.location.host === 'vault.testing.zippie.org') {
   signup_uri = 'https://signup.testing.zippie.org'
+  zippiecard_uri = 'https://card.testing.zippie.org'
   my_uri = 'https://my.testing.zippie.org'
 }
 
@@ -59,6 +62,7 @@ var inited = false
 var apphash = null
 var pubex = null
 var pubex_hdkey = null
+var enrollments = []
 
 var params = {}
 var iframed = false
@@ -76,6 +80,9 @@ function deriveWithHash(hdkey, hash) {
   return hdkey
 }
 
+/*
+ * Invoked by client application to initialize vault.
+ */
 function vaultInit(event) {
   var callback = event.data.callback
   var magiccookie
@@ -192,9 +199,11 @@ function vaultInit(event) {
             })
         })
     })
-    .then(_ => {
+    .then(async function  () {
       // okay, now we have apphash and pubex
       pubex_hdkey = HDKey.fromExtendedKey(pubex)
+
+      enrollments = await getEnrollments()
 
       event.source.postMessage({
         'callback' : callback,
@@ -308,7 +317,70 @@ async function getAppPrivEx() {
   return privex_hdkey
 }
 
-export function setup() {
+/*
+ *
+ *
+ */
+async function getEnrollments () {
+  let masterseed = await getSeed()
+
+  let keyhash = shajs('sha256')
+    .update('enrollments')
+    .digest()
+
+  let masterauth = deriveWithHash(HDKey.fromMasterSeed(masterseed), keyhash)
+    .derive('m/0')
+
+  let timestamp = Date.now()
+  let hash = shajs('sha256').update(timestamp.toString()).digest()
+  let sig = secp256k1.sign(hash, masterauth.privateKey)
+
+  // XXX error handling
+  let fms_bundle = {
+    'pubkey': masterauth.publicKey.toString('hex'),
+    'data': timestamp.toString(),
+    'sig': sig.signature.toString('hex'),
+    'recovery': sig.recovery
+  }
+
+  try {
+    let xhr = new XMLHttpRequestPromise()
+    let response = await xhr.send({
+      'method': 'POST',
+      'url': fms_uri +  '/perma_fetch',
+      'headers': {
+        'Content-Type': 'application/json;charset=UTF-8'
+      },
+      'data': JSON.stringify(fms_bundle)
+    })
+
+    if (response.status != 200)
+      return null
+
+    if ('error' in JSON.parse(response.responseText)) {
+      return null
+    }
+
+    let ciphertext_dict = JSON.parse(response.responseText).data
+    ciphertext = {
+      iv: Buffer.from(ciphertext_dict.iv, 'hex'),
+      ephemPublicKey: Buffer.from(ciphertext_dict.ephemPublicKey, 'hex'),
+      ciphertext: Buffer.from(ciphertext_dict.ciphertext, 'hex'),
+      mac: Buffer.from(ciphertext_dict.mac, 'hex')
+    }
+
+    let plaintext = await eccrypto.decrypt(masterauth, ciphertext)
+    return JSON.parse(plaintext.toString('utf8'))
+  } catch (e) {
+    return null
+  }
+}
+
+/*
+ *
+ *
+ */
+export async function setup() {
   if (location.hash.startsWith('#wipe=') && confirm('Do you really want to wipe Zippie Vault? May cause data loss or money lost') === true) {
     return store.clearAll()
       .then(_ => {
@@ -399,7 +471,7 @@ export function setup() {
 
     return store.get('vaultSetup')
       .then(function(r) {
-        if (r.result === undefined || r.result.value === undefined) {
+        if (r.result === undefined || r.result.value !== 1) {
           window.location.hash = '#?signup=' + uri
           window.location.reload()
           return
@@ -482,6 +554,7 @@ export function setup() {
           return
         }
 
+        // TODO: Refactor internal vault dapp code.
         var iframe = document.createElement('iframe')
         iframe.style.cssText = iframe_style
         iframe.src = signup_uri // XXX switch to IPFS
@@ -489,8 +562,35 @@ export function setup() {
         document.body.appendChild(iframe)
       })
 
+  } else if (params['card'] !== undefined) {
+    console.log("CARD ENROLLMENT IN PROGRESS!")
+    return store.get('vaultSetup')
+      .then(async function (r) {
+        if (r.result === undefined || r.result.value !== 1) {
+          window.location.hash = '#?signup=' + uri
+          window.location.reload()
+          return
+        }
+
+        enrollments = await getEnrollments()
+
+        // TODO: Refactor internal vault dapp code.
+        var iframe = document.createElement('iframe')
+        iframe.style.cssText = iframe_style
+
+        if (r.result === undefined || r.result.value !== 1) {
+          iframe.src = signup_uri
+        } else {
+          iframe.src = zippiecard_uri
+        }
+
+        document.body.innerHTML = ''
+        document.body.appendChild(iframe)
+      })
+
   } else if (params['enroll'] !== undefined) {
     // insert a iframe that can postmessage to us in a privileged manner
+    // TODO: Refactor internal vault dapp code.
     var iframe = document.createElement('iframe')
     iframe.style.cssText = iframe_style
 
@@ -594,6 +694,200 @@ export class RootMessageHandler {
     })
   }
 
+  // Card Enrollment
+  //
+  async enrollcard (event) {
+    let masterseed = await getSeed()
+
+    let authkey
+    try {
+      authkey = secp256k1.publicKeyConvert(
+        Buffer.from(event.data.signingKey, 'hex'),
+        false
+      )
+
+      if (!secp256k1.publicKeyVerify(authkey)) {
+        throw 'Verification failed'
+      }
+    } catch (e) {
+      return event.source.postMessage({'enrollcard': {
+        success: false,
+        error: 'Failed to parse signing key.'
+      }})
+    }
+
+    let recoveryKey
+    try {
+      recoveryKey = secp256k1.publicKeyConvert(
+        Buffer.from(event.data.recoveryKey, 'hex'),
+        false
+      )
+
+      if (!secp256k1.publicKeyVerify(recoveryKey)) {
+        throw 'Failed to validate'
+      }
+    } catch (e) {
+      return event.source.postMessage({'enrollcard': {
+        success: false,
+        error: 'Failed to parse recovery key.'
+      }})
+    }
+
+    // Recovery
+    // eccrypto encrypt: [secret | tries | masterseed] against recovery pubkey.
+    // Generate Zippie Card AuthedDecrypt challenge
+    let secret = crypto.randomBytes(32)
+
+    let maxtries = new Buffer(2)
+    maxtries.fill(0x00)
+    maxtries.writeUInt16BE(3)
+
+    let recovery = await eccrypto.encrypt(
+      recoveryKey,
+      Buffer.concat(
+        secret,
+        maxtries,
+        masterseed
+      )
+    )
+
+    // Generate revokation key
+    let hash = shajs('sha256')
+      .update('zippie-cards/' + recoveryKey.toString('hex'))
+      .digest()
+
+    let revokepubkey = secp256k1.publicKeyConvert(
+      deriveWithHash(HDKey.fromMasterSeed(masterseed), hash).derive('m/0').publicKey,
+      false
+    )
+
+    // Upload to FMS using card signing key.
+    let upload = JSON.stringify({
+      authpubkey: authkey.toString('hex'),
+      data: {
+        iv: recovery.iv.toString('hex'),
+        ephemPublicKey: recovery.iv.toString('hex'),
+        ciphertext: recovery.ciphertext.toString('hex'),
+        mac: recovery.mac.toString('hex')
+      },
+      revokepubkey:  revokepubkey.toString('hex')
+    })
+
+    // Send POST request to store recovery in FMS
+    let xhr = new XMLHttpRequestPromise()
+    try {
+      let response = await xhr.send({
+        method: 'POST',
+        url: fms_uri + '/store',
+        headers: {
+          'Content-Type': 'application/json;charset=UTF-8'
+        },
+        data: upload
+      })
+
+      if (response.status != 200) {
+        throw 'Got error ' + JSON.stringify(response)
+      }
+
+      let responsejson = JSON.parse(response.responseText)
+
+      if ('error' in responsejson) throw error
+    } catch (e) {
+      alert('FMS store 1 (enrollcard) failed, balking: ' + err)
+      return
+    }
+
+    let keyhash = shajs('sha256')
+      .update('enrollments')
+      .digest()
+
+    let masterauth = deriveWithHash(HDKey.fromMasterSeed(masterseed), keyhash)
+      .derive('m/0')
+
+    // Add this new enrollment to local array in memory
+    enrollments.append({
+      type: 'card',
+      name: event.data.recoveryKey.toString('hex'),
+      revokePubkey: revokepubkey.toString('hex')
+    })
+
+    let ciphertext = await eccrypto.encrypt(masterauth, JSON.stringify(enrollments))
+
+    // Send POST request to update enrollment registry in permastore
+    xhr = new XMLHttpRequestPromise()
+    try {
+      let response = await xhr.send({
+        method: 'POST',
+        url: fms_uri + '/perma_store',
+        headers: {
+          'Content-Type': 'application/json;charset=UTF-8'
+        },
+        data: JSON.stringify({
+          authpubkey: masterauth.publicKey.toString('hex'),
+          data: JSON.stringify(ciphertext)
+        })
+      })
+
+      if (response.status != 200) {
+        throw 'Got error ' + JSON.stringify(response)
+      }
+
+      let responsejson = JSON.parse(response.responseText)
+
+      if ('error' in responsejson) throw error
+    } catch (e) {
+      alert('FMS store 1 (enrollcard) failed, balking: ' + err)
+      return
+    }
+
+    event.source.postMessage({'enrollcard': true}, event.origin)
+  }
+
+  // Card Revoke
+  async revokecard (event) {
+    let masterseed = await getSeed()
+
+    // Generate revokation key from masterseed + recoverykey derivation
+    let hash = shajs('sha256')
+      .update('zippie-cards/' + event.data.recoveryKey)
+      .digest()
+
+    let revokekey = deriveWithHash(HDKey.fromMasterSeed(masterseed), hash)
+      .derive('m/0')
+
+    // Tell FMS to revoke stored authed decrypt data.
+    let timestamp = Date.now()
+    hash = shajs('sha256').update(timestamp.toString()).digest()
+    let sig = secp256k1.sign(hash, revokekey.privateKey)
+
+    // XXX error handling
+    var fms_bundle = { 'hash': hash.toString('hex'), 'timestamp' : timestamp.toString(), 'sig' : sig.signature.toString('hex'), 'recovery' : sig.recovery }
+
+    var xhrPromise = new XMLHttpRequestPromise()
+    try {
+      let response = await xhrPromise.send({
+         'method': 'POST',
+         'url': fms_uri + '/revoke',
+         'headers': {
+           'Content-Type': 'application/json;charset=UTF-8'
+         },
+         'data' : forgetme_upload
+      })
+      if (response.status != 200)
+         throw 'Got error ' + JSON.stringify(response)
+
+      let responsejson = JSON.parse(response.responseText)
+      if ('error' in responsejson)
+        throw error
+
+    } catch (err) {
+      alert('FMS revoke 1 (revokecard) failed, balking: ' + err)
+      return
+    }
+
+    event.source.postMessage({'revokecard': true}, event.origin)
+  }
+
   // enrolldevice
   //
   async enrolldevice (event) {
@@ -654,7 +948,50 @@ export class RootMessageHandler {
       if ('error' in responsejson)
         throw error
     } catch (err) {
-      alert('FMS store 1 (enroll) failed, balking: ' + err)
+      alert('FMS store 1 (enrolldevice) failed, balking: ' + err)
+      return
+    }
+
+    let keyhash = shajs('sha256')
+      .update('enrollments')
+      .digest()
+
+    let masterauth = deriveWithHash(HDKey.fromMasterSeed(masterseed), keyhash)
+      .derive('m/0')
+
+    // Add this new enrollment to local array in memory
+    enrollments.append({
+      type: 'card',
+      name: devicename,
+      revokePubkey: revokepubkey.toString('hex')
+    })
+
+    let ciphertext = await eccrypto.encrypt(masterauth, JSON.stringify(enrollments))
+
+    // Send POST request to update enrollment registry in permastore
+    xhr = new XMLHttpRequestPromise()
+    try {
+      let response = await xhr.send({
+        method: 'POST',
+        url: fms_uri + '/perma_store',
+        headers: {
+          'Content-Type': 'application/json;charset=UTF-8'
+        },
+        data: JSON.stringify({
+          authpubkey: masterauth.publicKey.toString('hex'),
+          data: JSON.stringify(ciphertext)
+        })
+      })
+
+      if (response.status != 200) {
+        throw 'Got error ' + JSON.stringify(response)
+      }
+
+      let responsejson = JSON.parse(response.responseText)
+
+      if ('error' in responsejson) throw error
+    } catch (e) {
+      alert('FMS perma store (enrolldevice) failed, balking: ' + err)
       return
     }
 
@@ -865,8 +1202,20 @@ export class RootMessageHandler {
       return this.enroleeinfo(event)
     }
 
+    if ('enrollcard' in event.data) {
+      return this.enrollcard(event)
+    }
+
+    if ('revokecard' in event.data) {
+      return this.revokecard(event)
+    }
+
     if ('enrolldevice' in event.data) {
       return this.enrolldevice(event)
+    }
+
+    if ('revokedevice' in event.data) {
+      return this.revokedevice(event)
     }
 
     if ('finishenrollment' in event.data) {
@@ -895,6 +1244,83 @@ export class VaultMessageHandler {
   qrscan (event) {
     window.location = 'https://qrscan.io/'
     window.reload()
+  }
+
+  // Enrolled Cards/Devices Registry
+  //
+  async getEnrollments (event) {
+    event.source.postMessage({'result': enrollments})
+  }
+
+  async getCardInfo (event) {
+    let signature = Buffer.from(event.data.getCardInfo.signature, 'hex')
+    let signingKey = Buffer.from(event.data.getCardInfo.signingKey, 'hex')
+
+    console.info('getCardInfo: Generating signed message hash...')
+    let digest = crypto.createHash('sha256').update(
+      Buffer.concat([
+        Buffer.from('\x19Ethereum Signed Message:\n32', 'ascii'),
+        Buffer.from(event.data.getCardInfo.nonce, 'hex')
+      ])
+    ).digest()
+
+    console.info('getCardInfo: Discovering recovery key index from signature...')
+    var v, p
+    for (v = 0; v < 4; v++) {
+      try {
+        var attempt = secp256k1.recover(digest, signature, v, false)
+      } catch (e) { continue }
+
+      if (!secp256k1.publicKeyConvert(attempt, false).equals(signingKey)) {
+        continue
+      }
+
+      // Decompress and compare successful
+      p = attempt
+      break
+    }
+
+    let fms_bundle = {
+      'hash': digest.toString('hex'),
+      'timestamp': event.data.getCardInfo.nonce,
+      'sig': event.data.getCardInfo.signature,
+      'recovery': v
+    }
+
+    console.info('getCardInfo: Quering forget me service...')
+    let xhr = new XMLHttpRequestPromise()
+    let response = await xhr.send({
+      'method': 'POST',
+      'url': fms_uri + '/fetch',
+      'headers': {
+        'Content-Type': 'application/json;charset=UTF-8'
+      },
+      'data': JSON.stringify(fms_bundle)
+    })
+
+    if (response.status != 200) {
+      event.source.postMessage({
+        'callback': event.data.callback,
+        'result': null
+      }, event.origin)
+      return
+    }
+
+    if ('error' in JSON.parse(response.responseText)) {
+      event.source.postMessage({
+        'callback': event.data.callback,
+        'result': null
+      }, event.origin)
+      return
+    }
+
+    event.source.postMessage({
+      'callback': event.data.callback,
+      'result': JSON.parse(response.responseText)
+    }, event.origin)
+  }
+
+  getDeviceInfo (event) {
   }
 
   secp256k1KeyInfo (event) {
@@ -953,6 +1379,9 @@ export class VaultMessageHandler {
   respondsTo (event) {
     return ('init' in event.data) ||
            ('qrscan' in event.data) ||
+           ('getEnrollments' in event.data) ||
+           ('getCardInfo' in event.data) ||
+           ('getDeviceInfo' in event.data) ||
            ('secp256k1KeyInfo' in event.data) ||
            ('secp256k1Sign' in event.data) ||
            ('secp256k1Encrypt' in event.data) ||
@@ -966,6 +1395,18 @@ export class VaultMessageHandler {
 
     if ('qrscan' in event.data) {
       return this.qrscan(event)
+    }
+
+    if ('getEnrollments' in event.data) {
+      return this.getEnrollments(event)
+    }
+
+    if ('getCardInfo' in event.data) {
+      return this.getCardInfo(event)
+    }
+
+    if ('getDeviceInfo' in event.data) {
+      return this.getDeviceInfo(event)
     }
 
     if ('secp256k1KeyInfo' in event.data) {
