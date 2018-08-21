@@ -44,6 +44,7 @@ var iframe_style = 'border: none; position: absolute; width: 100%; height: 100%'
 var fms_uri = 'https://fms.zippie.org'
 var signup_uri = 'https://signup.zippie.org'
 var zippiecard_uri = 'https://card.zippie.org'
+zippiecard_uri = 'http://127.0.0.1:8080'
 var my_uri = 'https://my.zippie.org'
 
 // If we're running in dev environment, use dev signup aswell.
@@ -330,18 +331,7 @@ async function getEnrollments () {
 
   let masterauth = deriveWithHash(HDKey.fromMasterSeed(masterseed), keyhash)
     .derive('m/0')
-
-  let timestamp = Date.now()
-  let hash = shajs('sha256').update(timestamp.toString()).digest()
-  let sig = secp256k1.sign(hash, masterauth.privateKey)
-
-  // XXX error handling
-  let fms_bundle = {
-    'pubkey': masterauth.publicKey.toString('hex'),
-    'data': timestamp.toString(),
-    'sig': sig.signature.toString('hex'),
-    'recovery': sig.recovery
-  }
+  let masterauthpub = secp256k1.publicKeyConvert(masterauth.publicKey, false)
 
   try {
     let xhr = new XMLHttpRequestPromise()
@@ -351,28 +341,36 @@ async function getEnrollments () {
       'headers': {
         'Content-Type': 'application/json;charset=UTF-8'
       },
-      'data': JSON.stringify(fms_bundle)
+      'data': JSON.stringify({
+        pubkey: masterauthpub.toString('hex')
+      })
     })
 
-    if (response.status != 200)
-      return null
-
-    if ('error' in JSON.parse(response.responseText)) {
-      return null
+    if (response.status !== 200) {
+      console.error(response)
+      return []
     }
 
-    let ciphertext_dict = JSON.parse(response.responseText).data
-    ciphertext = {
+    if ('error' in JSON.parse(response.responseText)) {
+      console.error(response)
+      return []
+    }
+
+    let cipherhex = JSON.parse(response.responseText).data.data
+    let ciphertext_dict = JSON.parse(Buffer.from(cipherhex, 'hex').toString('utf8'))
+
+    let ciphertext = {
       iv: Buffer.from(ciphertext_dict.iv, 'hex'),
       ephemPublicKey: Buffer.from(ciphertext_dict.ephemPublicKey, 'hex'),
       ciphertext: Buffer.from(ciphertext_dict.ciphertext, 'hex'),
       mac: Buffer.from(ciphertext_dict.mac, 'hex')
     }
 
-    let plaintext = await eccrypto.decrypt(masterauth, ciphertext)
+    let plaintext = await eccrypto.decrypt(masterauth.privateKey, ciphertext)
     return JSON.parse(plaintext.toString('utf8'))
   } catch (e) {
-    return null
+    console.error('Error retrieving enrollment registry:', e)
+    return []
   }
 }
 
@@ -572,7 +570,10 @@ export async function setup() {
           return
         }
 
-        enrollments = await getEnrollments()
+        let enrollmentRegister = await getEnrollments()
+        if (enrollmentRegister) enrollments = enrollmentRegister
+
+        console.log(enrollments)
 
         // TODO: Refactor internal vault dapp code.
         var iframe = document.createElement('iframe')
@@ -581,7 +582,7 @@ export async function setup() {
         if (r.result === undefined || r.result.value !== 1) {
           iframe.src = signup_uri
         } else {
-          iframe.src = zippiecard_uri
+          iframe.src = zippiecard_uri + '/#/' + params['card']
         }
 
         document.body.innerHTML = ''
@@ -699,27 +700,11 @@ export class RootMessageHandler {
   async enrollcard (event) {
     let masterseed = await getSeed()
 
-    let authkey
-    try {
-      authkey = secp256k1.publicKeyConvert(
-        Buffer.from(event.data.signingKey, 'hex'),
-        false
-      )
-
-      if (!secp256k1.publicKeyVerify(authkey)) {
-        throw 'Verification failed'
-      }
-    } catch (e) {
-      return event.source.postMessage({'enrollcard': {
-        success: false,
-        error: 'Failed to parse signing key.'
-      }})
-    }
-
+    console.log('Parsing card recovery and signing keys.')
     let recoveryKey
     try {
       recoveryKey = secp256k1.publicKeyConvert(
-        Buffer.from(event.data.recoveryKey, 'hex'),
+        Buffer.from(event.data.enrollcard.recoveryKey, 'hex'),
         false
       )
 
@@ -730,9 +715,27 @@ export class RootMessageHandler {
       return event.source.postMessage({'enrollcard': {
         success: false,
         error: 'Failed to parse recovery key.'
-      }})
+      }}, event.source.origin)
     }
 
+    let authkey
+    try {
+      authkey = secp256k1.publicKeyConvert(
+        Buffer.from(event.data.enrollcard.signingKey, 'hex'),
+        false
+      )
+
+      if (!secp256k1.publicKeyVerify(authkey)) {
+        throw 'Verification failed'
+      }
+    } catch (e) {
+      return event.source.postMessage({'enrollcard': {
+        success: false,
+        error: 'Failed to parse signing key.'
+      }}, event.source.origin)
+    }
+
+    console.log('Generating card recovery data.')
     // Recovery
     // eccrypto encrypt: [secret | tries | masterseed] against recovery pubkey.
     // Generate Zippie Card AuthedDecrypt challenge
@@ -744,13 +747,14 @@ export class RootMessageHandler {
 
     let recovery = await eccrypto.encrypt(
       recoveryKey,
-      Buffer.concat(
+      Buffer.concat([
         secret,
         maxtries,
         masterseed
-      )
+      ])
     )
 
+    console.log('Generating card revokation key.')
     // Generate revokation key
     let hash = shajs('sha256')
       .update('zippie-cards/' + recoveryKey.toString('hex'))
@@ -761,19 +765,7 @@ export class RootMessageHandler {
       false
     )
 
-    // Upload to FMS using card signing key.
-    let upload = JSON.stringify({
-      authpubkey: authkey.toString('hex'),
-      data: {
-        iv: recovery.iv.toString('hex'),
-        ephemPublicKey: recovery.iv.toString('hex'),
-        ciphertext: recovery.ciphertext.toString('hex'),
-        mac: recovery.mac.toString('hex')
-      },
-      revokepubkey:  revokepubkey.toString('hex')
-    })
-
-    // Send POST request to store recovery in FMS
+    console.log('Sending card recovery data to forget me service.')
     let xhr = new XMLHttpRequestPromise()
     try {
       let response = await xhr.send({
@@ -782,49 +774,15 @@ export class RootMessageHandler {
         headers: {
           'Content-Type': 'application/json;charset=UTF-8'
         },
-        data: upload
-      })
-
-      if (response.status != 200) {
-        throw 'Got error ' + JSON.stringify(response)
-      }
-
-      let responsejson = JSON.parse(response.responseText)
-
-      if ('error' in responsejson) throw error
-    } catch (e) {
-      alert('FMS store 1 (enrollcard) failed, balking: ' + err)
-      return
-    }
-
-    let keyhash = shajs('sha256')
-      .update('enrollments')
-      .digest()
-
-    let masterauth = deriveWithHash(HDKey.fromMasterSeed(masterseed), keyhash)
-      .derive('m/0')
-
-    // Add this new enrollment to local array in memory
-    enrollments.append({
-      type: 'card',
-      name: event.data.recoveryKey.toString('hex'),
-      revokePubkey: revokepubkey.toString('hex')
-    })
-
-    let ciphertext = await eccrypto.encrypt(masterauth, JSON.stringify(enrollments))
-
-    // Send POST request to update enrollment registry in permastore
-    xhr = new XMLHttpRequestPromise()
-    try {
-      let response = await xhr.send({
-        method: 'POST',
-        url: fms_uri + '/perma_store',
-        headers: {
-          'Content-Type': 'application/json;charset=UTF-8'
-        },
         data: JSON.stringify({
-          authpubkey: masterauth.publicKey.toString('hex'),
-          data: JSON.stringify(ciphertext)
+          authpubkey: authkey.toString('hex'),
+          data: {
+            iv: recovery.iv.toString('hex'),
+            ephemPublicKey: recovery.iv.toString('hex'),
+            ciphertext: recovery.ciphertext.toString('hex'),
+            mac: recovery.mac.toString('hex')
+          },
+          revokepubkey:  revokepubkey.toString('hex')
         })
       })
 
@@ -836,10 +794,86 @@ export class RootMessageHandler {
 
       if ('error' in responsejson) throw error
     } catch (e) {
-      alert('FMS store 1 (enrollcard) failed, balking: ' + err)
+      alert('FMS store 1 (enrollcard) failed, balking: ' + e)
       return
     }
 
+    let keyhash = shajs('sha256')
+      .update('enrollments')
+      .digest()
+
+    let masterauth = deriveWithHash(HDKey.fromMasterSeed(masterseed), keyhash)
+      .derive('m/0')
+    let masterauthpub = secp256k1.publicKeyConvert(masterauth.publicKey, false)
+
+    // Add this new enrollment to local array in memory
+    enrollments.push({
+      type: 'card',
+      name: event.data.enrollcard.recoveryKey,
+      revokePubkey: revokepubkey.toString('hex')
+    })
+
+    // Remove duplicates
+    let names = enrollments.map(item => item.name)
+    let payload = enrollments.filter((item, pos) => {
+      return names.indexOf(item.name) === pos
+    })
+    console.log(payload)
+
+    // Generate latest device registry encrypted file
+    let ciphertext = await eccrypto.encrypt(
+      masterauthpub,
+      Buffer.from(JSON.stringify(payload), 'utf8')
+    )
+
+    let ciphertext_json = Buffer.from(JSON.stringify({
+      iv: ciphertext.iv.toString('hex'), 
+      ephemPublicKey: ciphertext.ephemPublicKey.toString('hex'),
+      ciphertext: ciphertext.ciphertext.toString('hex'),
+      mac: ciphertext.mac.toString('hex')
+    }), 'utf8')
+
+    console.log('Creating data signature.')
+    let datahash = shajs('sha256')
+      .update(ciphertext_json)
+      .digest()
+
+    let sig = await secp256k1.sign(
+      datahash,
+      masterauth.privateKey
+    )
+
+    console.log('Storing enrollment registry in perma store.')
+    // Send POST request to update enrollment registry in permastore
+    xhr = new XMLHttpRequestPromise()
+    try {
+      let response = await xhr.send({
+        method: 'POST',
+        url: fms_uri + '/perma_store',
+        headers: {
+          'Content-Type': 'application/json;charset=UTF-8'
+        },
+        data: JSON.stringify({
+          data: ciphertext_json.toString('hex'),
+          sig: sig.signature.toString('hex'),
+          recovery: sig.recovery
+        })
+      })
+
+      if (response.status != 200) {
+        throw 'Got error ' + JSON.stringify(response)
+      }
+
+      let responsejson = JSON.parse(response.responseText)
+
+      if ('error' in responsejson) throw error
+    } catch (e) {
+      alert('FMS store 1 (enrollcard) failed, balking: ' + e)
+      return
+    }
+
+    // Update local cache
+    enrollments = payload
     event.source.postMessage({'enrollcard': true}, event.origin)
   }
 
@@ -897,6 +931,7 @@ export class RootMessageHandler {
     // - device name
     let devicepubkey = Buffer.from(event.data.enrolldevice.devicepubkey, 'hex')
     let authpubkey = Buffer.from(event.data.enrolldevice.authpubkey, 'hex')
+    authpubkey = secp256k1.publicKeyConvert(authpubkey, false)
 
     let devicename = event.data.enrolldevice.devicename
     let hash = shajs('sha256').update('zippie-devices/' + devicename).digest()
@@ -958,16 +993,43 @@ export class RootMessageHandler {
 
     let masterauth = deriveWithHash(HDKey.fromMasterSeed(masterseed), keyhash)
       .derive('m/0')
+    let masterauthpub = secp256k1.publicKeyConvert(masterauth.publicKey, false)
 
-    // Add this new enrollment to local array in memory
-    enrollments.append({
+        // Add this new enrollment to local array in memory
+    enrollments.push({
       type: 'card',
-      name: devicename,
+      name: event.data.enrollcard.recoveryKey,
       revokePubkey: revokepubkey.toString('hex')
     })
 
-    let ciphertext = await eccrypto.encrypt(masterauth, JSON.stringify(enrollments))
+    // Generate latest device registry encrypted file
+    let ciphertext = await eccrypto.encrypt(
+      masterauthpub,
+      Buffer.from(JSON.stringify(enrollments), 'utf8')
+    )
 
+    let ciphertext_json = Buffer.from(JSON.stringify({
+      iv: ciphertext.iv.toString('hex'), 
+      ephemPublicKey: ciphertext.ephemPublicKey.toString('hex'),
+      ciphertext: ciphertext.ciphertext.toString('hex'),
+      mac: ciphertext.mac.toString('hex')
+    }), 'utf8')
+
+    console.log('Creating data signature.')
+    let datahash = shajs('sha256')
+      .update(ciphertext_json)
+      .digest()
+
+    console.log(datahash)
+    console.log(masterauth)
+    let sig = await secp256k1.sign(
+      datahash,
+      masterauth.privateKey
+    )
+
+    let rpk = secp256k1.recover(datahash, sig.signature, sig.recovery, false)
+
+    console.log('Storing enrollment registry in perma store.')
     // Send POST request to update enrollment registry in permastore
     xhr = new XMLHttpRequestPromise()
     try {
@@ -978,8 +1040,9 @@ export class RootMessageHandler {
           'Content-Type': 'application/json;charset=UTF-8'
         },
         data: JSON.stringify({
-          authpubkey: masterauth.publicKey.toString('hex'),
-          data: JSON.stringify(ciphertext)
+          data: ciphertext_json.toString('hex'),
+          sig: sig.signature.toString('hex'),
+          recovery: sig.recovery
         })
       })
 
@@ -1186,8 +1249,11 @@ export class RootMessageHandler {
     if (window.top !== window) return false
 
     return ('qrscan' in event.data) ||
+           ('enrollcard' in event.data) ||
+           ('revokecard' in event.data) ||
            ('enroleeinfo' in event.data) ||
            ('enrolldevice' in event.data) ||
+           ('revokedevice' in event.data) ||
            ('finishenrollment' in event.data) ||
            ('checkenrollment' in event.data) ||
            ('newidentity' in event.data)
@@ -1198,16 +1264,16 @@ export class RootMessageHandler {
       return this.qrscan(event)
     }
 
-    if ('enroleeinfo' in event.data) {
-      return this.enroleeinfo(event)
-    }
-
     if ('enrollcard' in event.data) {
       return this.enrollcard(event)
     }
 
     if ('revokecard' in event.data) {
       return this.revokecard(event)
+    }
+
+    if ('enroleeinfo' in event.data) {
+      return this.enroleeinfo(event)
     }
 
     if ('enrolldevice' in event.data) {
@@ -1249,45 +1315,71 @@ export class VaultMessageHandler {
   // Enrolled Cards/Devices Registry
   //
   async getEnrollments (event) {
-    event.source.postMessage({'result': enrollments})
+    event.source.postMessage({
+      'callback': event.data.callback,
+      'result': enrollments.map(i => { return {type: i.type, name: i.name}})}, event.origin)
   }
 
   async getCardInfo (event) {
+    let info = null
+
+    for (let i = 0; i < enrollments.length; i++) {
+      let r = enrollments[i]
+      if (r.name === event.data.getCardInfo.recoveryKey) {
+        info = r
+        break
+      }
+    }
+
+    if (info) {
+      event.source.postMessage({
+        'callback': event.data.callback,
+        'result': {type: info.type, name: info.name}
+      }, event.origin)
+    } else {
+      event.source.postMessage({
+        'callback': event.data.callback,
+        'result': null
+      }, event.origin)
+    }
+    /*
     let signature = Buffer.from(event.data.getCardInfo.signature, 'hex')
     let signingKey = Buffer.from(event.data.getCardInfo.signingKey, 'hex')
+    signature = secp256k1.signatureImport(signature)
+    signingKey = secp256k1.publicKeyConvert(signingKey, false)
 
     console.info('getCardInfo: Generating signed message hash...')
-    let digest = crypto.createHash('sha256').update(
-      Buffer.concat([
-        Buffer.from('\x19Ethereum Signed Message:\n32', 'ascii'),
-        Buffer.from(event.data.getCardInfo.nonce, 'hex')
-      ])
-    ).digest()
+    let cleartext = Buffer.concat([
+      Buffer.from('\x19Ethereum Signed Message:\n32', 'ascii'),
+      Buffer.from(event.data.getCardInfo.nonce, 'hex')
+    ])
 
     console.info('getCardInfo: Discovering recovery key index from signature...')
-    var v, p
+    let digest = crypto.createHash('sha256').update(cleartext).digest()
+    let v, p
     for (v = 0; v < 4; v++) {
       try {
         var attempt = secp256k1.recover(digest, signature, v, false)
-      } catch (e) { continue }
-
-      if (!secp256k1.publicKeyConvert(attempt, false).equals(signingKey)) {
+      } catch (e) {
+        console.log('Failed to recover signature:', e)
         continue
       }
 
       // Decompress and compare successful
+      if (!secp256k1.publicKeyConvert(attempt, false).equals(signingKey)) {
+        continue
+      }
+
       p = attempt
       break
     }
 
-    let fms_bundle = {
-      'hash': digest.toString('hex'),
-      'timestamp': event.data.getCardInfo.nonce,
-      'sig': event.data.getCardInfo.signature,
-      'recovery': v
+    if (!p) {
+      console.error("Failed to recover public key from card signature!")
+      return
     }
 
-    console.info('getCardInfo: Quering forget me service...')
+    console.info('getCardInfo: Querying forget me service...')
     let xhr = new XMLHttpRequestPromise()
     let response = await xhr.send({
       'method': 'POST',
@@ -1295,7 +1387,11 @@ export class VaultMessageHandler {
       'headers': {
         'Content-Type': 'application/json;charset=UTF-8'
       },
-      'data': JSON.stringify(fms_bundle)
+      'data': JSON.stringify({
+        'timestamp': cleartext.toJSON().data,
+        'sig': signature.toString('hex'),
+        'recovery': v
+      })
     })
 
     if (response.status != 200) {
@@ -1318,6 +1414,7 @@ export class VaultMessageHandler {
       'callback': event.data.callback,
       'result': JSON.parse(response.responseText)
     }, event.origin)
+    */
   }
 
   getDeviceInfo (event) {
