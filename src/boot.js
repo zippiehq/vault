@@ -18,23 +18,21 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
-*/
+ *
+ */
 const api = require('./api.js')
 const vault = require('./vault.js')
 const version = require('../version.js')
 
-const store = require('store')
-
+/**
+ * Global Vars
+ */
+var dispatcher
 var worker
 
-const VAULT_MESSAGE_HANDLERS = [
-  new vault.RootMessageHandler(),
-  new vault.VaultMessageHandler()
-]
-
-//
-// Webkit ITP 2.0 Support
-//
+/**
+ * Webkit ITP 2.0 Support
+ */
 function requestStorage () {
   return document.requestStorageAccess()
     .then(
@@ -50,44 +48,87 @@ function requestStorage () {
       })
 }
 
-//
-// Webkit ITP 2.0 Support
-//
+/**
+ * Vault Message Dispatcher
+ */
+class MessageDispatcher {
+  constructor (processors) {
+    this.processors = processors
+    self.addEventListener('message', this.dispatch.bind(this))
+  }
+
+  dispatch (event) {
+    console.log('CL: message received:', event.data)
+
+    // Called by parent when the user presses the "Zippie Signin" button.
+    //XXX: Not happy about this being here.
+    if ('login' in event.data) {
+      return requestStorage()
+    }
+
+    for (var i = 0; i < this.processors.length; i++) {
+      var receiver = this.processors[i]
+      if (!receiver.respondsTo(event)) continue
+      if (receiver.process(event)) return
+    }
+
+    console.log('CL: message type unrecognized:', event)
+  }
+}
+
+/**
+ * Vault Entry-Point
+ */
 window.addEventListener('load', function () {
-  if (window.top == window.self || window.location.hash.startsWith('#iframe=')) {
+  console.info('VAULT: Loading...')
+
+  if (window.top === window.self || window.location.hash.startsWith('#iframe=')) {
+    console.info('VAULT: Configuring root mode...')
+    dispatcher = new MessageDispatcher([
+      new vault.RootMessageHandler()
+    ])
+
     return vault.setup().then(() => {
-      console.log('Zippie Vault setup.')
+      console.info('VAULT: Setup complete.')
     })
   }
 
+  console.info('VAULT: Configuring enclave mode...')
+  dispatcher = new MessageDispatcher([
+    new vault.VaultMessageHandler()
+  ])
+
+  // Webkit ITP 2.0 Support
+  //XXX: Not happy about this being here.
   if (document.hasStorageAccess !== undefined) {
-    console.log('ITP 2.0 browser support detected, checking storage status.')
+    console.info('VAULT: ITP-2.0: browser support detected, checking storage status.')
     return document.hasStorageAccess()
       .then(
         r => {
           if (r === false) {
-            console.log('Vault does not have storage access, notifying client.')
+            console.info('VAULT: ITP-2.0: Vault does not have storage access, notifying client.')
             return parent.postMessage({login: null}, '*')
           }
 
           // Post vault ready.
-          console.log('Zippie Vault ready.')
-          parent.postMessage({ready : true}, '*')
+          console.info('VAULT: ITP-2.0: Setup complete.')
+          parent.postMessage({ready: true}, '*')
         },
         e => {
-          console.error('Vault hasStorageAccess:', e)
+          console.error('VAULT: ITP-2.0: hasStorageAccess:', e)
+          parent.postMessage({error: 'ITP-2.0'})
         }
       )
   }
 
   // Post vault ready.
-  console.log('Zippie Vault ready.')
+  console.info('VAULT: Setup complete.')
   parent.postMessage({ready : true}, '*')
 })
 
-//
-// Initialise Vault Service Worker
-//
+/**
+ * Initialise Vault Service Worker
+ *
 function initSW () {
   if (!('serviceWorker' in navigator)) {
     console.error('SERVICE WORKERS NOT SUPPORTED IN THIS BROWSER!')
@@ -169,24 +210,4 @@ function initSW () {
       return
     })
 }
-
-//
-// Vault message dispatcher
-//
-self.addEventListener('message', function (event) {
-  console.log('CL: message received:', event.data)
-
-  // Called by parent when the user presses the "Zippie Signin" button.
-  if ('login' in event.data) {
-    return requestStorage()
-  }
-
-  for (var i = 0; i < VAULT_MESSAGE_HANDLERS.length; i++) {
-    var handler = VAULT_MESSAGE_HANDLERS[i]
-    if (!handler.respondsTo(event)) continue
-    if (handler.process(event)) return
-  }
-
-  console.log('CL: message type unrecognized:', event)
-})
-
+*/

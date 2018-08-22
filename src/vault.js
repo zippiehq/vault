@@ -18,7 +18,8 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
-*/
+ *
+ */
 const Cookie = require('js-cookie')
 
 var HDKey = require('hdkey')
@@ -102,7 +103,7 @@ function vaultInit(event) {
   console.log("Vault Data:", vdata)
 
   if (vdata === undefined) {
-      console.error('No vault data cookie.')
+      console.warn('No vault data cookie.')
       return event.source.postMessage({
         'callback': callback,
         'error': 'launch',
@@ -113,7 +114,7 @@ function vaultInit(event) {
 
   if (vdata !== undefined) {
     if (magiccookie === undefined) {
-      console.error('No magiccookie supplied!')
+      console.warn('No magiccookie supplied!')
       return event.source.postMessage({
         'callback': callback,
         'error': 'launch',
@@ -346,13 +347,8 @@ async function getEnrollments () {
       })
     })
 
-    if (response.status !== 200) {
-      console.error(response)
-      return []
-    }
-
-    if ('error' in JSON.parse(response.responseText)) {
-      console.error(response)
+    if (response.status !== 200 || ('error' in JSON.parse(response.responseText))) {
+      console.warn('VAULT: Permastore returned unsucessful response for get enrollments registry.', response)
       return []
     }
 
@@ -415,7 +411,7 @@ export async function setup() {
 
     return store.get('vaultSetup')
       .then(function(r) {
-        if (r.result === undefined || r.result.value === undefined) {
+        if (r === undefined || r.result === undefined || r.result.value === undefined) {
           window.location = location.href.split('/#')[0] + '/#?signup=' + uri
           window.location.reload()
         }
@@ -427,7 +423,7 @@ export async function setup() {
         return store.get('pubex-' + apphash.toString('hex'))
       })
       .then(function(r) {
-        if (r.result === undefined || r.result.value === undefined) {
+        if (r === undefined || r.result === undefined || r.result.value === undefined) {
           return getSeed()
             .then(seed => {
               let hdkey = HDKey.fromMasterSeed(seed)
