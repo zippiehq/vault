@@ -5,8 +5,8 @@ module.exports = {
   mode: 'development',
 
   entry: {
-    worker: ['babel-polyfill', path.resolve(__dirname, 'worker') + '/worker.js'],
-      boot: ['babel-polyfill', path.resolve(__dirname, 'src') + '/boot.js']
+    worker: ['@babel/polyfill', path.resolve(__dirname, 'worker') + '/worker.js'],
+      boot: ['@babel/polyfill', path.resolve(__dirname, 'src') + '/boot.js']
   },
 
 /*   plugins: [
@@ -18,9 +18,10 @@ module.exports = {
       {
         test: /\.js$/,
         exclude: /node_modules/,
-        use: [
-          'babel-loader',
-        ],
+        use: {
+          loader: 'babel-loader',
+          options: { presets: ['@babel/preset-env'] }
+	},
       },
     ],
   },
@@ -29,4 +30,4 @@ module.exports = {
     filename: '[name]-bundle.js',
     path: path.resolve(__dirname, 'dist')
   }
-};
+}

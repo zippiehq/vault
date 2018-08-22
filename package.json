@@ -14,19 +14,19 @@
     "eccrypto": "^1.0.3",
     "hdkey": "^0.8.0",
     "js-cookie": "^2.2.0",
-    "secp256k1": "^3.5.0",
+    "secp256k1": "^3.5.2",
     "secrets.js-grempe": "^1.1.0",
     "sha.js": "^2.4.10",
     "store": "^2.0.12",
-    "webpack": "^4.0.1",
+    "webpack": "^4.17.1",
     "webpack-cli": "^2.0.9",
     "xhr-promise": "^2.0.0"
   },
   "devDependencies": {
-    "http-server": "^0.11.1",
-    "@babel/core": "^7.0.0-beta.47",
-    "@babel/preset-env": "^7.0.0-beta.47",
-    "babel-loader": "^8.0.0-beta.3",
-    "babel-polyfill": "^6.26.0"
+    "@babel/core": "^7.0.0-rc.2",
+    "@babel/polyfill": "^7.0.0-rc.2",
+    "@babel/preset-env": "^7.0.0-rc.2",
+    "babel-loader": "^8.0.0-beta.6",
+    "http-server": "^0.11.1"
   }
 }
