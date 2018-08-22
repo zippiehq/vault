@@ -22,10 +22,10 @@
  */
 const Cookie = require('js-cookie')
 
-var HDKey = require('hdkey')
-var secrets = require('secrets.js-grempe')
-var secp256k1 = require('secp256k1')
-var shajs = require('sha.js')
+const HDKey = require('hdkey')
+const secrets = require('secrets.js-grempe')
+const secp256k1 = require('secp256k1')
+const shajs = require('sha.js')
 const crypto = require('crypto');
 const eccrypto = require('eccrypto');
 const XMLHttpRequestPromise = require('xhr-promise')
@@ -38,36 +38,38 @@ const storeplain = require('store')
 // seed piece 1 out of 2 (2of2) encrypted with device local private key
 // forgetme server url if non-standard
 
+/**
+ * Import Configuration
+ */
+var runtime_mode = 'release'
 
-// Configuration
-var iframe_style = 'border: none; position: absolute; width: 100%; height: 100%'
-
-var fms_uri = 'https://fms.zippie.org'
-var signup_uri = 'https://signup.zippie.org'
-var zippiecard_uri = 'https://card.zippie.org'
-zippiecard_uri = 'http://127.0.0.1:8080'
-var my_uri = 'https://my.zippie.org'
-
-// If we're running in dev environment, use dev signup aswell.
-if (window.location.host === 'vault.dev.zippie.org') {
-  signup_uri = 'https://signup.dev.zippie.org'
-  zippiecard_uri = 'https://card.dev.zippie.org'
-  my_uri = 'https://my.dev.zippie.org'
-} else if (window.location.host === 'vault.testing.zippie.org') {
-  signup_uri = 'https://signup.testing.zippie.org'
-  zippiecard_uri = 'https://card.testing.zippie.org'
-  my_uri = 'https://my.testing.zippie.org'
+if (window.location.host.indexOf('localhost') !== -1) {
+  runtime_mode = 'development'
+} else if (window.location.host.indexOf('dev.zippie.org') !== -1) {
+  runtime_mode = 'development'
+} else if (window.location.host.indexOf('testing.zippie.org') !== -1) {
+  runtime_mode = 'testing'
 }
 
-// vault per-session state
+var config = require('../zippie.config.js')[runtime_mode]
+console.info('VAULT: Runtime Mode:', runtime_mode)
+
+
+/**
+ * Module  Vars
+ */
+var params = {}
 var inited = false
+
+var iframe_style = 'border: none; position: absolute; width: 100%; height: 100%'
+var iframed = false
+
 var apphash = null
 var pubex = null
 var pubex_hdkey = null
+
 var enrollments = []
 
-var params = {}
-var iframed = false
 
 // an app-pubex is calculated by taking private extended key of root + some derivation, always hardened +
 //   [for every 32 bit of the 256-bit hash, take the hardended child of index (value integer divided with 2^31) and then the hardened child of index (value integer mod 2^31)
@@ -248,7 +250,7 @@ function getSeed() {
       let xhr = new XMLHttpRequestPromise()
       return xhr.send({
         'method': 'POST',
-        'url': fms_uri + '/fetch',
+        'url': config.apps.apis.fms + '/fetch',
         'headers': {
           'Content-Type': 'application/json;charset=UTF-8'
         },
@@ -338,7 +340,7 @@ async function getEnrollments () {
     let xhr = new XMLHttpRequestPromise()
     let response = await xhr.send({
       'method': 'POST',
-      'url': fms_uri +  '/perma_fetch',
+      'url': config.apps.apis.permastore +  '/perma_fetch',
       'headers': {
         'Content-Type': 'application/json;charset=UTF-8'
       },
@@ -411,7 +413,7 @@ export async function setup() {
 
     return store.get('vaultSetup')
       .then(function(r) {
-        if (r === undefined || r.result === undefined || r.result.value === undefined) {
+        if (r.result === undefined || r.result.value === undefined) {
           window.location = location.href.split('/#')[0] + '/#?signup=' + uri
           window.location.reload()
         }
@@ -423,7 +425,7 @@ export async function setup() {
         return store.get('pubex-' + apphash.toString('hex'))
       })
       .then(function(r) {
-        if (r === undefined || r.result === undefined || r.result.value === undefined) {
+        if (r.result === undefined || r.result.value === undefined) {
           return getSeed()
             .then(seed => {
               let hdkey = HDKey.fromMasterSeed(seed)
@@ -551,7 +553,9 @@ export async function setup() {
         // TODO: Refactor internal vault dapp code.
         var iframe = document.createElement('iframe')
         iframe.style.cssText = iframe_style
-        iframe.src = signup_uri // XXX switch to IPFS
+
+        iframe.src = config.apps.root.signup // XXX switch to IPFS
+
         document.body.innerHTML = ''
         document.body.appendChild(iframe)
       })
@@ -575,10 +579,11 @@ export async function setup() {
         var iframe = document.createElement('iframe')
         iframe.style.cssText = iframe_style
 
+        // XXX switch to IPFS
         if (r.result === undefined || r.result.value !== 1) {
-          iframe.src = signup_uri
+          iframe.src = config.apps.root.signup
         } else {
-          iframe.src = zippiecard_uri + '/#/' + params['card']
+          iframe.src = config.apps.root.card + '/#/' + params['card']
         }
 
         document.body.innerHTML = ''
@@ -592,7 +597,7 @@ export async function setup() {
     iframe.style.cssText = iframe_style
 
     // XXX switch to IPFS
-    iframe.src = signup_uri + '/#/enroll/' + params['enroll']
+    iframe.src = config.apps.root.signup + '/#/enroll/' + params['enroll']
 
     document.body.innerHTML = ''
     document.body.appendChild(iframe)
@@ -662,7 +667,7 @@ export class RootMessageHandler {
   // Open application.
   //
   open (event) {
-    console.log('VAULT REDIRECT TO:', event.data.open.uri)
+    console.log('VAULT: REDIRECTING TO:', event.data.open.uri)
     window.location = event.data.open.uri
     window.location.reload()
   }
@@ -773,7 +778,7 @@ export class RootMessageHandler {
     try {
       let response = await xhr.send({
         method: 'POST',
-        url: fms_uri + '/store',
+        url: config.apps.apis.fms + '/store',
         headers: {
           'Content-Type': 'application/json;charset=UTF-8'
         },
@@ -852,7 +857,7 @@ export class RootMessageHandler {
     try {
       let response = await xhr.send({
         method: 'POST',
-        url: fms_uri + '/perma_store',
+        url: config.apps.apis.permastore + '/perma_store',
         headers: {
           'Content-Type': 'application/json;charset=UTF-8'
         },
@@ -904,7 +909,7 @@ export class RootMessageHandler {
     try {
       let response = await xhrPromise.send({
          'method': 'POST',
-         'url': fms_uri + '/revoke',
+         'url': config.apps.apis.fms + '/revoke',
          'headers': {
            'Content-Type': 'application/json;charset=UTF-8'
          },
@@ -969,12 +974,11 @@ export class RootMessageHandler {
       'revokepubkey' : revokepubkey.toString('hex')
     })
 
-    var url = fms_uri + '/store'
     var xhrPromise = new XMLHttpRequestPromise()
     try {
       let response = await xhrPromise.send({
          'method': 'POST',
-         'url': url,
+         'url': config.apps.apis.fms + '/store',
          'headers': {
            'Content-Type': 'application/json;charset=UTF-8'
          },
@@ -1038,7 +1042,7 @@ export class RootMessageHandler {
     try {
       let response = await xhr.send({
         method: 'POST',
-        url: fms_uri + '/perma_store',
+        url: config.apps.apis.permastore + '/perma_store',
         headers: {
           'Content-Type': 'application/json;charset=UTF-8'
         },
@@ -1102,12 +1106,12 @@ export class RootMessageHandler {
     let sig = secp256k1.sign(hash, derivedKey)
     // XXX error handling
     var fms_bundle = { 'hash': hash.toString('hex'), 'timestamp' : timestamp.toString(), 'sig' : sig.signature.toString('hex'), 'recovery' : sig.recovery }
-    var url = fms_uri + '/fetch'
+
     var xhrPromise = new XMLHttpRequestPromise()
     try {
       let response = await xhrPromise.send({
         'method': 'POST',
-        'url': url,
+        'url': config.apps.apis.fms + '/fetch',
         'headers': {
           'Content-Type': 'application/json;charset=UTF-8'
         },
@@ -1166,14 +1170,12 @@ export class RootMessageHandler {
       'revokepubkey': revokepubkey.toString('hex')
     })
 
-    var url = fms_uri + '/store'
-    
     var xhrPromise = new XMLHttpRequestPromise()
     try {
       console.log('Storing remote slice')
       let response = await xhrPromise.send({
          'method': 'POST',
-         'url': url,
+         'url': config.apps.apis.fms +  '/store',
          'headers': {
            'Content-Type': 'application/json;charset=UTF-8'
          },
@@ -1231,8 +1233,6 @@ export class RootMessageHandler {
         store.set('localkey', local.privateKey.toString('hex')),
         store.set('authkey', auth.privateKey.toString('hex')),
         store.set('localslice_e', ciphertext1_json),
-        store.set('fms', fms_uri),
-        store.set('useremail', event.data.newidentity.email),
         store.set('vaultSetup', 1)
       ])
       .then(_ => {

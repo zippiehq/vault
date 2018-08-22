@@ -25,7 +25,7 @@ const vault = require('./vault.js')
 const version = require('../version.js')
 
 /**
- * Global Vars
+ * Module Vars
  */
 var dispatcher
 var worker
