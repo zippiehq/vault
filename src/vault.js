@@ -663,11 +663,16 @@ async function secp256k1GenerateKey () {
 // Message processing for root level apps, like onboarding.
 //
 export class RootMessageHandler {
+  // Open application.
+  //
+  open (event) {
+    window.location = event.data.open.uri
+  }
+
   // Open qrscan.io for scanning qr codes.
   //
   qrscan (event) {
     window.location = 'https://qrscan.io'
-    window.reload()
   }
 
   // enroleeinfo
@@ -1248,7 +1253,8 @@ export class RootMessageHandler {
     // Check we're root window, otherwise we don't respond.
     if (window.top !== window) return false
 
-    return ('qrscan' in event.data) ||
+    return ('open' in event.data) ||
+           ('qrscan' in event.data) ||
            ('enrollcard' in event.data) ||
            ('revokecard' in event.data) ||
            ('enroleeinfo' in event.data) ||
@@ -1260,6 +1266,10 @@ export class RootMessageHandler {
   }
 
   process (event) {
+    if ('open' in event.data) {
+      return this.open(event)
+    }
+
     if ('qrscan' in event.data) {
       return this.qrscan(event)
     }
