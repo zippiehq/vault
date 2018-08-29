@@ -666,7 +666,9 @@ export class RootMessageHandler {
   // Open application.
   //
   open (event) {
+    console.log('VAULT: Opening URI:' + event.data.open.uri)
     window.location = event.data.open.uri
+    window.location.reload()
   }
 
   // Open qrscan.io for scanning qr codes.
@@ -814,8 +816,9 @@ export class RootMessageHandler {
     // Add this new enrollment to local array in memory
     enrollments.push({
       type: 'card',
-      name: event.data.enrollcard.recoveryKey,
-      revokePubkey: revokepubkey.toString('hex')
+      name: event.data.enrollcard.recoveryKey.slice(-8),
+      signingKey: event.data.enrollcard.signingKey,
+      recoveryKey: event.data.enrollcard.recoveryKey
     })
 
     // Remove duplicates
@@ -1327,7 +1330,13 @@ export class VaultMessageHandler {
   async getEnrollments (event) {
     event.source.postMessage({
       'callback': event.data.callback,
-      'result': enrollments.map(i => { return {type: i.type, name: i.name}})}, event.origin)
+      'result': enrollments.map(i => { return {
+        type: i.type,
+        name: i.name,
+        signingKey: secp256k1.publicKeyConvert(
+          Buffer.from(i.signingKey, 'hex'),
+          false).toString('hex')
+      }})}, event.origin)
   }
 
   async getCardInfo (event) {
