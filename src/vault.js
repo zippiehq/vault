@@ -882,7 +882,10 @@ export class RootMessageHandler {
 
     // Update local cache
     enrollments = payload
-    event.source.postMessage({'enrollcard': true}, event.origin)
+    //event.source.postMessage({'enrollcard': true}, event.origin)
+
+    window.location = my_uri
+    window.location.reload()
   }
 
   // Card Revoke
