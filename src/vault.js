@@ -575,6 +575,8 @@ export async function setup() {
 
         console.log(enrollments)
 
+        window.location.hash = hash.slice(0, hash.indexOf('?'))
+
         // TODO: Refactor internal vault dapp code.
         var iframe = document.createElement('iframe')
         iframe.style.cssText = iframe_style
@@ -885,7 +887,6 @@ export class RootMessageHandler {
     //event.source.postMessage({'enrollcard': true}, event.origin)
 
     window.location = my_uri
-    window.location.reload()
   }
 
   // Card Revoke
@@ -1347,7 +1348,7 @@ export class VaultMessageHandler {
 
     for (let i = 0; i < enrollments.length; i++) {
       let r = enrollments[i]
-      if (r.name === event.data.getCardInfo.recoveryKey) {
+      if (r.signingKey === event.data.getCardInfo.signingKey) {
         info = r
         break
       }
