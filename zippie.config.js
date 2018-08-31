@@ -1,10 +1,10 @@
 module.exports = {
   development: {
+    apis: {
+      fms: 'https://fms.zippie.org',
+      permastore: 'https://fms.zippie.org'
+    },
     apps: {
-      apis: {
-        fms: 'https://fms.zippie.org',
-        permastore: 'https://fms.zippie.org'
-      },
       root: {
         auth: 'https://pin.dev.zippie.org',
         card: 'https://card.dev.zippie.org',
@@ -17,11 +17,11 @@ module.exports = {
   },
 
   testing: {
+    apis: {
+      fms: 'https://fms.zippie.org',
+      permastore: 'https://fms.zippie.org'
+    },
     apps: {
-      apis: {
-        fms: 'https://fms.zippie.org',
-        permastore: 'https://fms.zippie.org'
-      },
       root: {
         auth: 'https://pin.testing.zippie.org',
         card: 'https://card.testing.zippie.org',
@@ -34,11 +34,11 @@ module.exports = {
   },
 
   release: {
+    apis: {
+      fms: 'https://fms.zippie.org',
+      permastore: 'https://fms.zippie.org'
+    },
     apps: {
-      apis: {
-        fms: 'https://fms.zippie.org',
-        permastore: 'https://fms.zippie.org'
-      },
       root: {
         auth: 'https://pin.zippie.org',
         card: 'https://card.zippie.org',

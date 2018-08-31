@@ -20,38 +20,24 @@
  * SOFTWARE.
  *
  */
-import Vault from './vault.js'
-import VERSION from '../version.js'
 
 /**
- * Detect Runtime Exection Mode
+ * Vault User/Enclave Mode Plugin
  */
-var runtime_mode = 'release'
-
-if (window.location.host.indexOf('localhost') !== -1) {
-  runtime_mode = 'development'
-} else if (window.location.host.indexOf('dev.zippie.org') !== -1) {
-  runtime_mode = 'development'
-} else if (window.location.host.indexOf('testing.zippie.org') !== -1) {
-  runtime_mode = 'testing'
-}
-
-/**
- * Import Runtime Configuration
- */
-var config = require('../zippie.config.js')[runtime_mode]
-console.info('VAULT: Runtime Mode:', runtime_mode)
-
-/**
- * Vault Entry-Point
- */
-window.addEventListener('load', function () {
-  let vault = new Vault(config)
-
-  if (runtime_mode === 'development' || runtime_mode === 'testing') {
-    window.vault = vault
+export default class {
+  /**
+   *
+   */
+  install (vault) {
+    this.vault = vault
   }
 
-  vault.startup()
-})
-
+  /**
+   *
+   */
+  startup () {
+    if (this.vault.mode === 'root') { // ROOT-MODE ONLY RECEIVERS
+    }
+    return true
+  }
+}

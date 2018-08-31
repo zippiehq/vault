@@ -20,16 +20,16 @@
  * SOFTWARE.
  *
  */
-const Cookie = require('js-cookie')
+import FMS from './apis/fms.js'
+import Permastore from './apis/permastore.js'
 
-const HDKey = require('hdkey')
-const secrets = require('secrets.js-grempe')
-const secp256k1 = require('secp256k1')
-const shajs = require('sha.js')
-const crypto = require('crypto');
-const eccrypto = require('eccrypto');
-const XMLHttpRequestPromise = require('xhr-promise')
-const storeplain = require('store')
+import shajs from 'sha.js'
+import Crypto from 'crypto'
+import secp256k1 from 'secp256k1'
+import eccrypto from 'eccrypto'
+
+import HDKey from 'hdkey'
+import secrets from 'secrets.js-grempe'
 
 // vault database contains:
 // cache of app hash -> app-pubex
@@ -38,1497 +38,692 @@ const storeplain = require('store')
 // seed piece 1 out of 2 (2of2) encrypted with device local private key
 // forgetme server url if non-standard
 
-/**
- * Import Configuration
- */
-var runtime_mode = 'release'
-
-if (window.location.host.indexOf('localhost') !== -1) {
-  runtime_mode = 'development'
-} else if (window.location.host.indexOf('dev.zippie.org') !== -1) {
-  runtime_mode = 'development'
-} else if (window.location.host.indexOf('testing.zippie.org') !== -1) {
-  runtime_mode = 'testing'
-}
-
-var config = require('../zippie.config.js')[runtime_mode]
-console.info('VAULT: Runtime Mode:', runtime_mode)
-
+//TODO:
+//  - Local caching of pubex's
+//  - User data storing in vault (language preference, etc.)
 
 /**
- * Module  Vars
+ * Webkit ITP 2.0 Support
  */
-var params = {}
-var inited = false
-
-var iframe_style = 'border: none; position: absolute; width: 100%; height: 100%'
-var iframed = false
-
-var apphash = null
-var pubex = null
-var pubex_hdkey = null
-
-var enrollments = []
-
-
-// an app-pubex is calculated by taking private extended key of root + some derivation, always hardened +
-//   [for every 32 bit of the 256-bit hash, take the hardended child of index (value integer divided with 2^31) and then the hardened child of index (value integer mod 2^31)
-function deriveWithHash(hdkey, hash) {
-  for (var i = 0; i < 32; i += 4) {
-    var value = hash.readUInt32LE(i)
-    var upper = Math.trunc(value / HDKey.HARDENED_OFFSET)
-    var lower = value - Math.trunc(value / HDKey.HARDENED_OFFSET) * HDKey.HARDENED_OFFSET
-    hdkey = hdkey.deriveChild(upper + HDKey.HARDENED_OFFSET)
-    hdkey = hdkey.deriveChild(lower + HDKey.HARDENED_OFFSET)
-  }
-  return hdkey
-}
-
-/*
- * Invoked by client application to initialize vault.
- */
-function vaultInit(event) {
-  var callback = event.data.callback
-  var magiccookie
-
-  if ('cookie' in event.data.init) {
-    console.log('Using cookie in init message.')
-    magiccookie = Buffer.from(event.data.init.cookie, 'hex')
-
-  } else if (location.hash.length > 0) {
-    console.log('Using cookie in URI hash')
-    magiccookie = Buffer.from(location.hash.slice(1), 'hex')
-  }
-
-  // Decode cookie
-  let vdata = Cookie.get('v-data')
-  console.log("Vault Data:", vdata)
-
-  if (vdata === undefined) {
-      console.warn('No vault data cookie.')
-      return event.source.postMessage({
-        'callback': callback,
-        'error': 'launch',
-        'launch': location.href.split('#')[0],
-        'reason': 'No vault data cookie.'
-      }, '*')
-  }
-
-  if (vdata !== undefined) {
-    if (magiccookie === undefined) {
-      console.warn('No magiccookie supplied!')
-      return event.source.postMessage({
-        'callback': callback,
-        'error': 'launch',
-        'launch': location.href.split('#')[0],
-        'reason': 'No magic cookie.'
-      }, '*')
-    }
-
-    vdata = JSON.parse(vdata)
-    console.log('VV Key', magiccookie)
-    // Decrypt vdata, populate local storage and continue.
-    let cipher = crypto.createDecipheriv('aes-256-cbc', magiccookie, Buffer.from(vdata.iv, 'hex'))
-    let b1 = cipher.update(Buffer.from(vdata.text, 'hex'))
-    let b2 = cipher.final()
-
-    vdata = JSON.parse(Buffer.concat([b1, b2]).toString('utf8'))
-    console.log('VV DECRYPTED:', vdata)
-
-    store.set('localkey', vdata.localkey),
-    store.set('authkey', vdata.authkey),
-    store.set('localslice_e', vdata.localslice_e),
-    store.set('vaultSetup', 1)    
-  }
-
-  // Read vault identity setup flag
-  store.get('vaultSetup')
-    .then(function(r) {
-      // Error with signup if no identity setup
-      if ((r.result === undefined || r.result.value !== 1)) {
-        return Promise.reject({error: 'signin', reason: 'signin'})
-      }
-    })
-    .then(function() {
-      apphash = shajs('sha256').update(event.origin).digest()
-
-      return getSeed()
-        .then(seed => {
-          let hdkey = HDKey.fromMasterSeed(seed)
-          pubex_hdkey = HDKey.fromExtendedKey(
-            deriveWithHash(hdkey, apphash).publicExtendedKey
-          )
-
-          pubex = pubex_hdkey.publicExtendedKey
-        })
-
-      // Read magic cookie from message parameters or location hash
-      var magiccookie;
-
-      if ('cookie' in event.data.init) {
-        console.log('Using cookie in init message.')
-        magiccookie = event.data.init.cookie
-        iframed = true
-
-      } else if (location.hash.length > 0) {
-        console.log('Using cookie in URI hash')
-        magiccookie = location.hash.slice(1)
-      }
-
-      // Get magic cookie from vault storage and validate.
-      return store.get('vault-cookie-' + magiccookie)
-        .then(function(r) {
-          if (r.result === undefined || r.result.value === undefined) {
-            return Promise.reject({error: 'launch', reason: 'no magic cookie'})
-          }
-
-          var apph = r.result.value
-
-          console.log('looked up ' + magiccookie +  ' got ' + apph)
-          store.remove('vault-cookie-' + magiccookie)
-
-          return store.get('pubex-' + apph)
-            .then(function(r) {
-              if (r.result === undefined || r.result.value === undefined) {
-                return Promise.reject({
-                  error: 'launch',
-                  reason: 'Valid cookie but no pubex'
-                })
-              }
-
-              apphash = Buffer.from(apph, 'hex')
-              pubex = r.result.value
-
-              return Promise.resolve()
-            })
-        })
-    })
-    .then(async function  () {
-      // okay, now we have apphash and pubex
-      pubex_hdkey = HDKey.fromExtendedKey(pubex)
-
-      enrollments = await getEnrollments()
-
-      event.source.postMessage({
-        'callback' : callback,
-        'result' : 'inited'
-      }, event.origin)
-
-      inited = true
-    })
-    .catch(e => {
-      console.error('Vault init error:', e)
-      event.source.postMessage({
-        'callback': callback,
-        'error': e.error,
-        'launch': e.launch || location.href.split('#')[0],
-        'reason': e.reason
-      }, event.origin)
-    })
-}
-
-function getSeed() {
-  // in real case this gets the other slice from the server and grabs seed for a moment
-  let timestamp = Date.now()
-  var hash = shajs('sha256').update(timestamp.toString()).digest()
-
-  return store.get('authkey')
-    .then(function(r) {
-      if (r.result === undefined || r.result.value === undefined) {
-        return Promise.reject('Failed to get authkey')
-      }
-
-      // XXX error handling
-      let sig = secp256k1.sign(hash, Buffer.from(r.result.value, 'hex'))
-      let fms_bundle = {
-        'hash': hash.toString('hex'),
-        'timestamp': timestamp.toString(),
-        'sig': sig.signature.toString('hex'),
-        'recovery': sig.recovery
-      }
-
-      let xhr = new XMLHttpRequestPromise()
-      return xhr.send({
-        'method': 'POST',
-        'url': config.apps.apis.fms + '/fetch',
-        'headers': {
-          'Content-Type': 'application/json;charset=UTF-8'
-        },
-        'data': JSON.stringify(fms_bundle)
-      })
-    })
-    .then(function(response) {
-      if (response.status != 200) {
-        return Promise.reject(JSON.stringify(response))
-      }
-
-      if ('error' in JSON.parse(response.responseText)) {
-        return Promise.reject('Got error fetching from FMS')
-      }
-
-      let localkey
-      let ciphertext2
-      let remoteslice
-
-      return store.get('localkey')
-        .then(async function (r) {
-          if (r.result === undefined || r.result.value === undefined) {
-            return Promise.reject('Failed to get localkey')
-          }
-
-          localkey = Buffer.from(r.result.value, 'hex')
-
-          let ciphertext2_dict = JSON.parse(response.responseText).data
-          ciphertext2 = {
-            iv: Buffer.from(ciphertext2_dict.iv, 'hex'),
-            ephemPublicKey: Buffer.from(ciphertext2_dict.ephemPublicKey, 'hex'),
-            ciphertext: Buffer.from(ciphertext2_dict.ciphertext, 'hex'),
-            mac: Buffer.from(ciphertext2_dict.mac, 'hex')
-          }
-
-          let remoteslice_e = await eccrypto.decrypt(localkey, ciphertext2)
-          remoteslice = remoteslice_e.toString('utf8')
-
-          return store.get('localslice_e')
-        })
-        .then(async function (r) {
-          if (r.result === undefined || r.result.value === undefined) {
-            return Promise.reject('Failed to get localslice')
-          }
-
-          let ciphertext1_dict = JSON.parse(r.result.value)
-          let ciphertext1 = {
-            iv: Buffer.from(ciphertext1_dict.iv, 'hex'),
-            ephemPublicKey: Buffer.from(ciphertext1_dict.ephemPublicKey, 'hex'),
-            ciphertext: Buffer.from(ciphertext1_dict.ciphertext, 'hex'),
-            mac: Buffer.from(ciphertext1_dict.mac, 'hex')
-          }
-
-          let localslice_e = await eccrypto.decrypt(localkey, ciphertext1)
-          let localslice = localslice_e.toString('utf8')
-          var masterseed = Buffer.from(secrets.combine([localslice, remoteslice]), 'hex')
-
-          // XXX some kind of checksum?
-          return masterseed
-        })
-    })
-}
-
-async function getAppPrivEx() {
-  let seed = await getSeed()
-  let hdkey = HDKey.fromMasterSeed(seed)
-  let privex_hdkey = HDKey.fromExtendedKey(deriveWithHash(hdkey, apphash).privateExtendedKey)
-  return privex_hdkey
-}
-
-/*
- *
- *
- */
-async function getEnrollments () {
-  let masterseed = await getSeed()
-
-  let keyhash = shajs('sha256')
-    .update('enrollments')
-    .digest()
-
-  let masterauth = deriveWithHash(HDKey.fromMasterSeed(masterseed), keyhash)
-    .derive('m/0')
-  let masterauthpub = secp256k1.publicKeyConvert(masterauth.publicKey, false)
-
-  try {
-    let xhr = new XMLHttpRequestPromise()
-    let response = await xhr.send({
-      'method': 'POST',
-      'url': config.apps.apis.permastore +  '/perma_fetch',
-      'headers': {
-        'Content-Type': 'application/json;charset=UTF-8'
+//XXX: Not happy about this being here.
+//     Move to plugin
+function requestStorage () {
+  return document.requestStorageAccess()
+    .then(
+      function () {
+        console.log('ITP: Storage access granted!')
+        // Post vault ready.
+        console.log('Zippie Vault ready.')
+        parent.postMessage({ready: true}, '*')
       },
-      'data': JSON.stringify({
-        pubkey: masterauthpub.toString('hex')
+      function () {
+        console.error('ITP: Storage access denied!')
+        parent.postMessage({error: 'ITP 2.0 Storage Access Denied'}, '*')
       })
-    })
-
-    if (response.status !== 200 || ('error' in JSON.parse(response.responseText))) {
-      console.warn('VAULT: Permastore returned unsucessful response for get enrollments registry.', response)
-      return []
-    }
-
-    let cipherhex = JSON.parse(response.responseText).data.data
-    let ciphertext_dict = JSON.parse(Buffer.from(cipherhex, 'hex').toString('utf8'))
-
-    let ciphertext = {
-      iv: Buffer.from(ciphertext_dict.iv, 'hex'),
-      ephemPublicKey: Buffer.from(ciphertext_dict.ephemPublicKey, 'hex'),
-      ciphertext: Buffer.from(ciphertext_dict.ciphertext, 'hex'),
-      mac: Buffer.from(ciphertext_dict.mac, 'hex')
-    }
-
-    let plaintext = await eccrypto.decrypt(masterauth.privateKey, ciphertext)
-    return JSON.parse(plaintext.toString('utf8'))
-  } catch (e) {
-    console.error('Error retrieving enrollment registry:', e)
-    return []
-  }
 }
 
-/*
+/**
+ * Zippie Vault
  *
+ *   The Zippie Vault stores and manages a users' digital identity and access to
+ * it by 3rd party applications. A users' digital identity from the vaults
+ * perspective is a master seed, which is used to derive a tree of encryption
+ * and message signing keys for various purposes. As well as what devices are
+ * allowed to have access to this master seed by the user to perform
+ * authenticated operations.
+ *
+ *   Each of a users' device has two keys, an authentication key and a local
+ * device key. The users' master seed is split into two slices, one of which is
+ * stored remotely on a server but encrypted against the devices' local key.
+ * The other slice is stored locally, and encrypted against the same device key.
+ *
+ *   When the vault is required to do an operation that requires the master seed
+ * usually for private key deriviation for a cryptographic operation, like
+ * ethereum transaction signing. The encrypted remote slice is retrieved from
+ * the server, decrypted and combined with the local slice, it is then used and
+ * dereferenced as soon as the operation is complete in order to reduce the time
+ * that the master seed is stored in memory in it's unencrypted form.
  *
  */
-export async function setup() {
-  if (location.hash.startsWith('#wipe=') && confirm('Do you really want to wipe Zippie Vault? May cause data loss or money lost') === true) {
-    return store.clearAll()
-      .then(_ => {
-        alert('Vault wiped')
-      })
-      .catch(e => {
-        alert(e)
-      })
+export default class Vault {
+  /**
+   * Constructor
+   */
+  constructor (config) {
+    // Local storage and configuration
+    this.config = config
+    this.store = window.localStorage
+
+    // Incoming message receivers
+    this._receivers = []
+
+    // Vault plugins
+    this._plugins = []
+
+    // Vault execution mode (host|enclave)
+    this.mode = undefined
+    this.params = {}
+    this.magiccookie = undefined
+
+    // Memcache for user application pubex cookies
+    this._pubex = {}
+
+    // Flag indicating whether user has a vault identity.
+    this._isConfigured = false
+    this._isSetup = null
+
+    //   By using the masterseed transaction methods, we can ensure that any
+    // nested uses of masterseed are handled correctly and only require a
+    // single FMS request.
+    this.__protected_masterseed = null
+    this.__protected_masterseed_refs = 0
+
+    // Install window message processors.
+    this.addReceiver(this)
+
+    // Import vault plugins
+    this.install([
+      new (require('./plugins/cookie_vault_injector.js')).default(),
+      new (require('./plugins/root_mode.js')).default(),
+      new (require('./plugins/user_mode.js')).default(),
+      new (require('./plugins/secp256k1.js')).default(),
+      new (require('./plugins/devices.js')).default(),
+      new (require('./plugins/misc.js')).default(),
+    ])
+
+    // Iterate vault plugins install phase.
+    this.plugin_exec('install', this)
   }
 
-  // Variables for parameter processing
-  let hash = window.location.hash
-
-  // Process URI fragment part for vault params
-  if (hash.indexOf('?') !== -1) {
-    let p = hash.split('?')[1].split(';')
-
-    for (var i = 0; i < p.length; i++) {
-      var kv = p[i].split('=')
-      params[kv[0]] = kv[1]
+  /**
+   * Install vault plugin/s
+   */
+  install (param) {
+    if (param.constructor === Array) {
+      this._plugins = this._plugins.concat(param)
+      return
     }
 
-    // Strip params from URI fragment part
-    //window.location.hash = hash.slice(0, hash.indexOf('?'))
+    this._plugins.push(param)
+    return
   }
 
-  console.log('Vault Parameters:', params)
+  /**
+   * Run through all registered plugins and execute a hook function if defined.
+   */
+  async plugin_exec(hook, params) {
+    for (let i = 0; i < this._plugins.length; i++) {
+      let plugin = this._plugins[i]
+      if (typeof plugin[hook] === 'function') {
+        await plugin[hook].apply(plugin, [].slice.call(arguments, 1))
+      }
+    }
+  }
 
-  // we either:
-  // - launch a uri w/ a cookie for authentication towards an app-pubex
-  // - start a signup process and afterwards launch a uri as linked
-  if (params['iframe'] !== undefined) {
-    let uri = params['iframe']
+  /**
+   * Configure vault and registered plugins
+   */
+  async configure () {
+    console.info('VAULT: Configuring...')
+    // Setup remote service APIs
+    this.fms = new FMS(this.config.apis.fms)
+    this.permastore = new Permastore(this.config.apis.permastore)
 
-    return store.get('vaultSetup')
-      .then(function(r) {
-        if (r.result === undefined || r.result.value === undefined) {
-          window.location = location.href.split('/#')[0] + '/#?signup=' + uri
-          window.location.reload()
-        }
+    // Start listening for incoming message events
+    self.addEventListener('message', this.dispatch.bind(this))
 
-        // TODO: Implement a nicer loading page.
-        document.getElementById('content').innerHTML = 'Signing in with Zippie...'
-        apphash = shajs('sha256').update(uri.split('/#')[0]).digest()
+    // Check to see if we're running in root mode.
+    if (window.top === window.self) {
+      console.info('VAULT: Running in root mode.')
+      this.mode = 'root'
 
-        return store.get('pubex-' + apphash.toString('hex'))
-      })
-      .then(function(r) {
-        if (r.result === undefined || r.result.value === undefined) {
-          return getSeed()
-            .then(seed => {
-              let hdkey = HDKey.fromMasterSeed(seed)
-              pubex_hdkey = HDKey.fromExtendedKey(
-                deriveWithHash(hdkey, apphash).publicExtendedKey
-              )
+    // Otherwise we're running in enclave mode.
+    } else {
+      console.info('VAULT: Running in enclave mode.')
+      this.mode = 'enclave'
+    }
 
-              pubex = pubex_hdkey.publicExtendedKey
-              return store.set('pubex-' + apphash.toString('hex'), pubex)
-            })
-        }
+    let hparts = window.location.hash.slice(1).split('?')
 
-        pubex = r.result.value
-      })
-      .then(async function() {
-        let cookie = crypto.randomBytes(32)
-        let vaultcookie = cookie.toString('hex')
+    this.magiccookie = hparts[0]
 
-        return store.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
-          .then(function() {
-            var iframe = document.createElement('iframe')
+    let query = hparts[1]
+    if (query !== undefined) {
+      let qparts = query.split(';')
+      for (let i = 0; i < qparts.length; i++) {
+        let kv = qparts[i].split('=')
+        this.params[kv[0]] = kv[1] || true
+      }
 
-            iframe.allow = 'camera'
-            iframe.style.cssText = iframe_style
+      // Strip params from URI fragment part
+      //window.location.hash = hash.slice(0, hash.indexOf('?'))
+    }
 
-            if (uri.indexOf('#') === -1) uri += '#'
-            iframe.src = uri + '?iframe=' + vaultcookie
+    console.info('VAULT: Parsed vault parameters:', this.params)
 
-            document.body.innerHTML = ''
-            document.body.appendChild(iframe)
-            return
-          })
-      })
+    // Iterate vault plugins configure phase.
+    await this.plugin_exec('configure')
 
-  } else if (params['launch'] !== undefined) {
-    // TODO: slice off the # in the end of target uri to allow deep returns but same context
-    let uri = params['launch']
-    console.log('Launching:', uri)
+    this._isConfigured = true
+  }
 
-    return store.get('vaultSetup')
-      .then(function(r) {
-        if (r.result === undefined || r.result.value !== 1) {
-          window.location.hash = '#?signup=' + uri
-          window.location.reload()
-          return
-        }
+  /**
+   * Startup Zippie Vault
+   */
+  async startup () {
+    if (!this._isConfigured) await this.configure()
 
-        document.getElementById('content').innerHTML = 'Signing in with Zippie...'
-        apphash = shajs('sha256').update(uri.split('/#')[0]).digest()
-        return store.get('pubex-' + apphash.toString('hex'))
-      })
-      .then(function(r) {
-        if (r.result === undefined || r.result.value === undefined) {
-          return getSeed()
-            .then(seed => {
-              let hdkey = HDKey.fromMasterSeed(seed)
-              pubex_hdkey = HDKey.fromExtendedKey(
-                deriveWithHash(hdkey, apphash).publicExtendedKey
-              )
-              pubex = pubex_hdkey.publicExtendedKey
+    console.info('VAULT: Starting up...')
 
-              return store.set('pubex-' + apphash.toString('hex'), pubex)
-            })
-        }
+    // Iterate vault plugins startup phase.
+    await this.plugin_exec('startup')
 
-        pubex = r.result.value
-      })
-      .then(function () {
-        let localkey
-        let authkey
-        let localslice
+    if (this.mode === 'enclave') {
+      window.top.postMessage({ready: true}, '*')
+    }
+    return
 
-        console.log('VV: Setting up cookie data')
-        return Promise.all([
-            store.get('localkey').then(r => { localkey = r.result.value }),
-            store.get('authkey').then(r => { authkey = r.result.value }),
-            store.get('localslice_e').then(r => {localslice = r.result.value })
-          ])
-          .then(function() {
-            return Promise.resolve({
-              localkey: localkey,
-              authkey: authkey,
-              localslice_e: localslice
-            })
-          })
-          .catch(e => {
-            console.error('VV', e)
-          })
-      })
-      .then(async function(vdata) {
-        let iv = crypto.randomBytes(16)
-        let cookie = crypto.randomBytes(32)
-        let vaultcookie = cookie.toString('hex')
+    // Webkit ITP 2.0 Support
+    //XXX: Not happy about this being here.
+    //     Move to plugin
+    if (document.hasStorageAccess !== undefined) {
+      console.info('VAULT: ITP-2.0: browser support detected, checking storage status.')
+      return document.hasStorageAccess()
+        .then(
+          r => {
+            if (r === false) {
+              console.info('VAULT: ITP-2.0: Vault does not have storage access.')
+              parent.postMessage({login: null}, '*')
+              return Promise.resolve()
+            }
 
-        console.log('Encrypting identity cookie.')
-        let cipher = crypto.createCipheriv('aes-256-cbc', cookie, iv)
-        let b1 = cipher.update(Buffer.from(JSON.stringify(vdata), 'utf8'))
-        let b2 = cipher.final()
-
-        console.log('Setting identity cookie.')
-        Cookie.set(
-          'v-data',
-          JSON.stringify({
-            iv: iv.toString('hex'),
-            text: Buffer.concat([b1, b2]).toString('hex')
-          }),
-          {secure: true}
+            // Post vault ready.
+            console.info('VAULT: ITP-2.0: Setup complete.')
+            parent.postMessage({ready: true}, '*')
+              return Promise.resolve()
+          },
+          e => {
+            console.error('VAULT: ITP-2.0: hasStorageAccess:', e)
+            parent.postMessage({error: 'ITP-2.0'})
+            return Promise.reject(e)
+          }
         )
+    }
+  }
 
-        return store.set('vault-cookie-' + vaultcookie, apphash.toString('hex'))
-          .then(_ => {
-            if (uri.indexOf('#') === -1) uri += '#'
-            window.location = uri + '?zippie-vault=' + location.href.split('#')[0] + '#' + vaultcookie
-          })
+  /**
+   * Launch a root or user application with options either in an iframe (for root)
+   * level applications like signup, smartcard and pin apps. Or generate auth
+   * token and pass them to user application for automatic signin.
+   */
+  async launch (uri, opts) {
+    // Decompose URI for parameter injection
+    let host = uri.split('#')[0]
+
+    // Get URI hash, if there is one.
+    let hash = uri.split('#')[1] || ''
+    let paramstr = hash.split('?')[1] || ''
+
+    // Strip off paramstr
+    hash = hash.split('?')[0]
+
+    // Collect hash parameters into params object.
+    let params = {}
+    let p = paramstr.split(';')
+
+    if (p[0] !== '') {
+      for (var i = 0; i < p.length; i++) {
+        let parts = p[i].split('=')
+        params[parts[0]] = parts[1]
+      }
+    }
+
+    // If we want to launch user app, we need to get pubex before we serialize
+    // below parameters, so we can pass the cookie through to the dapp.
+    if (!opts || !opts.root) {
+      await this.plugin_exec('prelaunch', uri, opts)
+      params['vault-cookie'] = this.magiccookie
+    }
+
+    // Inject specified parameters from provided opts into target params
+    if (opts && opts.params) {
+      Object.keys(opts.params).forEach(k => {
+        params[k] = opts.params[k]
       })
+    }
 
-  } else if (params['signup'] !== undefined) {
-    return store.get('vaultSetup')
-      .then(function(r) {
-        if (r.result != undefined && r.result.value === 1) {
-          alert('already setup')
-          return
-        }
-
-        // TODO: Refactor internal vault dapp code.
-        var iframe = document.createElement('iframe')
-        iframe.style.cssText = iframe_style
-
-        iframe.src = config.apps.root.signup // XXX switch to IPFS
-
-        document.body.innerHTML = ''
-        document.body.appendChild(iframe)
-      })
-
-  } else if (params['card'] !== undefined) {
-    console.log("CARD ENROLLMENT IN PROGRESS!")
-    return store.get('vaultSetup')
-      .then(async function (r) {
-        if (r.result === undefined || r.result.value !== 1) {
-          window.location.hash = '#?signup=' + uri
-          window.location.reload()
-          return
-        }
-
-        let enrollmentRegister = await getEnrollments()
-        if (enrollmentRegister) enrollments = enrollmentRegister
-
-        console.log(enrollments)
-
-        // TODO: Refactor internal vault dapp code.
-        var iframe = document.createElement('iframe')
-        iframe.style.cssText = iframe_style
-
-        // XXX switch to IPFS
-        if (r.result === undefined || r.result.value !== 1) {
-          iframe.src = config.apps.root.signup
-        } else {
-          iframe.src = config.apps.root.card + '/#/' + params['card']
-        }
-
-        document.body.innerHTML = ''
-        document.body.appendChild(iframe)
-      })
-
-  } else if (params['enroll'] !== undefined) {
-    // insert a iframe that can postmessage to us in a privileged manner
-    // TODO: Refactor internal vault dapp code.
-    var iframe = document.createElement('iframe')
-    iframe.style.cssText = iframe_style
-
-    // XXX switch to IPFS
-    iframe.src = config.apps.root.signup + '/#/enroll/' + params['enroll']
-
-    document.body.innerHTML = ''
-    document.body.appendChild(iframe)
-
-  } else {
-      alert('launched v9 plainly, what now?')      
-  }
-}
-
-//
-// Local storage adapter
-//
-const store = {
-  get: function (key) {
-    return Promise.resolve({ result: { value: storeplain.get(key)}})
-  },
-
-  set: function (key, value) {
-    return Promise.resolve(storeplain.set(key, value))
-  },
-
-  remove: function (key) {
-    return Promise.resolve(storeplain.remove(key))
-  },
-
-  clearAll: function () {
-    return Promise.resolve(storeplain.clearAll())
-  }
-}
-
-//
-// Vault storage adapter
-//
-/*
-const store = {
-  get: function (key) {
-    return window.VaultChannel.request({'store.get': {key: key}})
-  },
-
-  set: function (key, value) {
-    return window.VaultChannel.request({'store.set': {key: key, value: value}})
-  },
-
-  remove: function (key) {
-    return window.VaultChannel.request({'store.set': {key: key, value: undefined}})
-  },
-
-  clearAll: function () {
-    return window.VaultChannel.request({'store.clearAll': null})
-  }
-}
-*/
-
-//
-// Generate secp256k1 key helper
-//
-async function secp256k1GenerateKey () {
-  let key = crypto.randomBytes(32)
-  let pub = secp256k1.publicKeyCreate(key, false)
-  return {privateKey: key, publicKey: pub}
-}
-
-//
-// Message processing for root level apps, like onboarding.
-//
-export class RootMessageHandler {
-  // Open application.
-  //
-  open (event) {
-    console.log('VAULT: REDIRECTING TO:', event.data.open.uri)
-    window.location = event.data.open.uri
-    window.location.reload()
-  }
-
-  // Open qrscan.io for scanning qr codes.
-  //
-  qrscan (event) {
-    window.location = 'https://qrscan.io'
-  }
-
-  // enroleeinfo
-  //
-  async enroleeinfo (event) {
-    let local = await secp256k1GenerateKey()
-    let auth = await secp256k1GenerateKey()
-
-    Promise.all([
-      store.set('localkey', local.privateKey.toString('hex')),
-      store.set('authkey', auth.privateKey.toString('hex')),
-      store.set('devicePartiallySetup', 1)
-    ]).then(_ => {
-      event.source.postMessage({
-        'deviceenroleeinfo' : {
-          'localpubkey' : local.publicKey.toString('hex'),
-          'authpubkey' : auth.publicKey.toString('hex')
-        }
-      }, event.origin)
-    }).catch(e => {
-      console.error('Failed to store enroleeinfo:', e)
-      event.source.postMessage({
-        'deviceneroleeinfo': {success: false}
-      })
+    // Recombine params into paramstr for URI building
+    paramstr = ''
+    Object.keys(params).forEach(k => {
+      paramstr += (paramstr.length > 0 ? ';' : '') + k + '=' + params[k]
     })
+
+    // Reconstitute full application URI
+    hash = hash + (paramstr.length > 0 ? '?' + paramstr : '')
+    uri = host + (hash.length > 0 ? '#' + hash : '')
+
+    // Check to see if we're opening a root app.
+    if (opts && opts.root) {
+      console.info('VAULT: Loading vault application:', uri)
+
+      let iframe = document.createElement('iframe')
+      iframe.style.cssText = 'border: none; position: absolute; width: 100%; height: 100%'
+
+      iframe.src = uri
+
+      document.body.innerHTML = ''
+      document.body.appendChild(iframe)
+
+      // For root apps, it's helpful to listen for a "finished" signal, so we
+      // can use promises for handling things like, what to do after a new user
+      // signs up
+      return new Promise(function (resolve) {
+        window.addEventListener('message', function (event) {
+          if (event.source !== iframe.contentWindow) return
+          if ('finished' in event.data) resolve()
+        })
+      })
+
+    // Otherwise we're loading a user app, and need to generate app cookie.
+    } else {
+      console.info('VAULT: Booting client application:', uri)
+      window.location = uri
+    }
   }
 
-  // Card Enrollment
-  //
-  async enrollcard (event) {
-    let masterseed = await getSeed()
+  /**
+   * Check local store to see if vault is properly setup.
+   */
+  async isSetup () {
+    if (!this._isSetup) {
+      this._isSetup = (await this.store.getItem('isSetup')) ? true : false
+    }
+    return this._isSetup
+  }
 
-    console.log('Parsing card recovery and signing keys.')
-    let recoveryKey
-    try {
-      recoveryKey = secp256k1.publicKeyConvert(
-        Buffer.from(event.data.enrollcard.recoveryKey, 'hex'),
-        false
-      )
-
-      if (!secp256k1.publicKeyVerify(recoveryKey)) {
-        throw 'Failed to validate'
-      }
-    } catch (e) {
-      return event.source.postMessage({'enrollcard': {
-        success: false,
-        error: 'Failed to parse recovery key.'
-      }}, event.source.origin)
+  /**
+   * Pull remote slice and combine with local slice to generate masterseed.
+   */
+  async __getMasterSeed () {
+    if (!await this.isSetup()) {
+      console.log('VAULT: Vault has no identity!')
+      return null
     }
 
-    let authkey
-    try {
-      authkey = secp256k1.publicKeyConvert(
-        Buffer.from(event.data.enrollcard.signingKey, 'hex'),
-        false
-      )
-
-      if (!secp256k1.publicKeyVerify(authkey)) {
-        throw 'Verification failed'
-      }
-    } catch (e) {
-      return event.source.postMessage({'enrollcard': {
-        success: false,
-        error: 'Failed to parse signing key.'
-      }}, event.source.origin)
+    // Authkey used to index remote slice from FMS
+    let authkey = await this.store.getItem('authkey')
+    if (!authkey) {
+      console.error('VAULT: Failed to retrieve authkey from store.')
+      return null
     }
 
-    console.log('Generating card recovery data.')
-    // Recovery
-    // eccrypto encrypt: [secret | tries | masterseed] against recovery pubkey.
-    // Generate Zippie Card AuthedDecrypt challenge
-    let secret = crypto.randomBytes(32)
+    // Retrieve encrypted remote slice from FMS
+    let rcipher = await this.fms.fetch(authkey)
+    if  (!rcipher) return null
 
-    let maxtries = new Buffer(2)
-    maxtries.fill(0x00)
-    maxtries.writeUInt16BE(3)
+    // Retrieve localkey from store for decrypting remote slice from FMS
+    let localkey = await this.store.getItem('localkey')
+    if (!localkey) {
+      console.error('VAULT: Failed to retrieve localkey from store')
+      return null
+    }
 
-    let recovery = await eccrypto.encrypt(
-      recoveryKey,
-      Buffer.concat([
-        secret,
-        maxtries,
-        masterseed
-      ])
-    )
+    // Translate hex encoded key to Buffer instances.
+    localkey = Buffer.from(localkey, 'hex')
 
-    console.log('Generating card revokation key.')
-    // Generate revokation key
-    let hash = shajs('sha256')
-      .update('zippie-cards/' + recoveryKey.toString('hex'))
+    // Translate hex encoded values to Buffer instances.
+    Object.keys(rcipher)
+      .map(k => { rcipher[k] = Buffer.from(rcipher[k], 'hex') })
+
+    // Decrypt remote slice with localkey.
+    let rslice_enc = await eccrypto.decrypt(localkey, rcipher)
+    let rslice = rslice_enc.toString('utf8')
+
+    // Retrieve encrypted localslice from store.
+    let lcipher = await this.store.getItem('localslice_e')
+    if (!lcipher) {
+      console.error('VAULT: Failed to retrieve localslice from store')
+      return null
+    }
+
+    try {
+      lcipher = JSON.parse(lcipher)
+    } catch (e) {
+      console.error('VAULT: Failed to parse localslice JSON:', e)
+      return null
+    }
+
+    // Translate hex encoded values to Buffer instances.
+    Object.keys(lcipher)
+      .map(k => { lcipher[k] = Buffer.from(lcipher[k], 'hex') })
+
+    // Decrypt local slice with localkey.
+    let lslice_enc = await eccrypto.decrypt(localkey, lcipher)
+    let lslice = lslice_enc.toString('utf8')
+
+    // Combine local and remote slices and return masterseed.
+    return Buffer.from(secrets.combine([lslice, rslice]), 'hex')
+  }
+
+  /**
+   * Used to reference count and combine nested requests for the master seed
+   * into a single GET request.
+   */
+  async withMasterSeed (callback) {
+    if(!this.__protected_masterseed) {
+      console.info('VAULT: Generating local masterseed reference.')
+      this.__protected_masterseed = await this.__getMasterSeed()
+    }
+
+    this.__protected_masterseed_refs++
+    let result = await callback(this.__protected_masterseed)
+    this.__protected_masterseed_refs--
+
+    console.info('VAULT: Local masterseed refcount = ' +
+      this.__protected_masterseed_refs)
+
+    if (this.__protected_masterseed_refs === 0) {
+      console.info('VAULT: Destroying local masterseed reference.')
+      this.__protected_masterseed = null
+    }
+
+    return result
+  }
+
+  /**
+   * Derive a hardened extended key from masterseed and provided hash.
+   *
+   * An app-pubex is calculated by taking private extended key of root + some
+   * derivation, always hardened + [for every 32 bit of the 256-bit hash, take
+   * the hardended child of index (value integer divided with 2^31) and then the
+   * hardened child of index (value integer mod 2^31)
+   *
+   */
+  async derive (hash, seed) {
+    if (!seed && !await this.isSetup()) {
+      console.info('VAULT: Vault has no identity!')
+      return null
+    }
+
+    function op (seed) {
+      let hdkey = HDKey.fromMasterSeed(seed)
+
+      for (let i = 0; i < 32; i += 4) {
+        let v = hash.readUInt32LE(i)
+        let u = Math.trunc(v / HDKey.HARDENED_OFFSET)
+        let l = v - Math.trunc(v / HDKey.HARDENED_OFFSET) * HDKey.HARDENED_OFFSET
+        hdkey = hdkey.deriveChild(u + HDKey.HARDENED_OFFSET)
+        hdkey = hdkey.deriveChild(l + HDKey.HARDENED_OFFSET)
+      }
+
+      return hdkey
+    }
+
+    if (!seed) {
+      return await this.withMasterSeed(seed => { return op(seed) })
+    }
+
+    return op(seed)
+  }
+
+  /**
+   * Attempt to retrieve public extended key from memcache, local storage or
+   * generate.
+   */
+  async pubex (key) {
+    if (!await this.isSetup()) {
+      console.info('VAULT: Vault has no identity!')
+      return null
+    }
+
+    let hash = (typeof key === 'string') ? shajs('sha256').update(key).digest() : key
+
+    let pubex_hd = HDKey.fromExtendedKey((await this.derive(hash)).publicExtendedKey)
+    return pubex_hd
+  }
+
+  /**
+   * Derive private extended key
+   */
+  async privex (key) {
+    if (!await this.isSetup()) {
+      console.info('VAULT: Vault has no identity!')
+      return null
+    }
+
+    let hash = (typeof key === 'string') ? shajs('sha256').update(key).digest() : key
+
+    let privex = HDKey.fromExtendedKey((await this.derive(hash)).privateExtendedKey)
+    return privex
+  }
+
+  /**
+   * Creates new vault identity.
+   */
+  // TODO: Move to devices plugin.
+  async newidentity (req) {
+    console.info('VAULT: Generating identity keys.')
+    let masterseed = Crypto.randomBytes(32)
+
+    // Generate device local key
+    let localkey = Crypto.randomBytes(32)
+    let localpub = secp256k1.publicKeyCreate(localkey, false)
+
+    // Generate device auth key for retrieving remote slice of masterseed
+    let authkey = Crypto.randomBytes(32)
+    let authpub = secp256k1.publicKeyCreate(authkey, false)
+
+    // Generate predeterminate device revokation key
+    let revokehash = shajs('sha256')
+      .update('devices/' + localpub.toString('hex'))
       .digest()
 
-    let revokepubkey = secp256k1.publicKeyConvert(
-      deriveWithHash(HDKey.fromMasterSeed(masterseed), hash).derive('m/0').publicKey,
+    let revokekey = await this.derive(revokehash, masterseed)
+    let revokepub = secp256k1.publicKeyConvert(
+      revokekey.publicKey,
       false
     )
 
-    console.log('Sending card recovery data to forget me service.')
-    let xhr = new XMLHttpRequestPromise()
-    try {
-      let response = await xhr.send({
-        method: 'POST',
-        url: config.apps.apis.fms + '/store',
-        headers: {
-          'Content-Type': 'application/json;charset=UTF-8'
-        },
-        data: JSON.stringify({
-          authpubkey: authkey.toString('hex'),
-          data: {
-            iv: recovery.iv.toString('hex'),
-            ephemPublicKey: recovery.iv.toString('hex'),
-            ciphertext: recovery.ciphertext.toString('hex'),
-            mac: recovery.mac.toString('hex')
-          },
-          revokepubkey:  revokepubkey.toString('hex')
-        })
-      })
+    console.info('VAULT: Splitting identity into local and remote components.')
+    let parts = secrets.share(masterseed.toString('hex'), 2, 2)
 
-      if (response.status != 200) {
-        throw 'Got error ' + JSON.stringify(response)
-      }
+    console.info('VAULT: Encrypting identity parts.')
+    //XXX: Should both parts really be encrypted with the same key?
+    let cipher1 = await eccrypto.encrypt(localpub, Buffer.from(parts[0], 'utf8'))
+    let cipher2 = await eccrypto.encrypt(localpub, Buffer.from(parts[1], 'utf8'))
 
-      let responsejson = JSON.parse(response.responseText)
+    // Convert eccrypto output buffers to hex encoded strings.
+    Object.keys(cipher1).map(k => { cipher1[k] = cipher1[k].toString('hex')})
+    Object.keys(cipher2).map(k => { cipher2[k] = cipher2[k].toString('hex')})
 
-      if ('error' in responsejson) throw error
-    } catch (e) {
-      alert('FMS store 1 (enrollcard) failed, balking: ' + e)
-      return
+    console.info('VAULT: Sending remote identity part to FMS.')
+    if (!await this.fms.store(authpub, revokepub, cipher2)) {
+      console.error('VAULT: Store of identity part in FMS failed.')
+      return false
     }
 
-    let keyhash = shajs('sha256')
-      .update('enrollments')
-      .digest()
+    console.info('VAULT: Storing local identity keys and data into.')
+    this.store.setItem('authkey', authkey.toString('hex'))
+    this.store.setItem('localkey', localkey.toString('hex'))
+    this.store.setItem('localslice_e', JSON.stringify(cipher1))
+    this.store.setItem('isSetup', true)
 
-    let masterauth = deriveWithHash(HDKey.fromMasterSeed(masterseed), keyhash)
-      .derive('m/0')
-    let masterauthpub = secp256k1.publicKeyConvert(masterauth.publicKey, false)
+    console.info('VAULT: Creating enrollment registry')
+    await this.enroll('device', localpub.toString('hex').slice(-8), localpub.toString('hex'))
 
-    // Add this new enrollment to local array in memory
-    enrollments.push({
-      type: 'card',
-      name: event.data.enrollcard.recoveryKey,
-      revokePubkey: revokepubkey.toString('hex')
-    })
-
-    // Remove duplicates
-    let names = enrollments.map(item => item.name)
-    let payload = enrollments.filter((item, pos) => {
-      return names.indexOf(item.name) === pos
-    })
-    console.log(payload)
-
-    // Generate latest device registry encrypted file
-    let ciphertext = await eccrypto.encrypt(
-      masterauthpub,
-      Buffer.from(JSON.stringify(payload), 'utf8')
-    )
-
-    let ciphertext_json = Buffer.from(JSON.stringify({
-      iv: ciphertext.iv.toString('hex'), 
-      ephemPublicKey: ciphertext.ephemPublicKey.toString('hex'),
-      ciphertext: ciphertext.ciphertext.toString('hex'),
-      mac: ciphertext.mac.toString('hex')
-    }), 'utf8')
-
-    console.log('Creating data signature.')
-    let datahash = shajs('sha256')
-      .update(ciphertext_json)
-      .digest()
-
-    let sig = await secp256k1.sign(
-      datahash,
-      masterauth.privateKey
-    )
-
-    console.log('Storing enrollment registry in perma store.')
-    // Send POST request to update enrollment registry in permastore
-    xhr = new XMLHttpRequestPromise()
-    try {
-      let response = await xhr.send({
-        method: 'POST',
-        url: config.apps.apis.permastore + '/perma_store',
-        headers: {
-          'Content-Type': 'application/json;charset=UTF-8'
-        },
-        data: JSON.stringify({
-          data: ciphertext_json.toString('hex'),
-          sig: sig.signature.toString('hex'),
-          recovery: sig.recovery
-        })
-      })
-
-      if (response.status != 200) {
-        throw 'Got error ' + JSON.stringify(response)
-      }
-
-      let responsejson = JSON.parse(response.responseText)
-
-      if ('error' in responsejson) throw error
-    } catch (e) {
-      alert('FMS store 1 (enrollcard) failed, balking: ' + e)
-      return
-    }
-
-    // Update local cache
-    enrollments = payload
-    event.source.postMessage({'enrollcard': true}, event.origin)
+    console.info('VAULT: New identity created successfully!')
+    this._isSetup = true
+    return this._isSetup
   }
 
-  // Card Revoke
-  async revokecard (event) {
-    let masterseed = await getSeed()
+  /**
+   * Registers a card or device to the users identity.
+   */
+  //XXX: Reimplement as a CRDT TwoPhaseSet
+  async enroll (type, name, deviceKey, signingKey) {
+    let registryhash = shajs('sha256').update('devices').digest()
+    let registryauth = await this.derive(registryhash)
+    let registryauthpub = secp256k1.publicKeyConvert(registryauth.publicKey, false)
 
-    // Generate revokation key from masterseed + recoverykey derivation
-    let hash = shajs('sha256')
-      .update('zippie-cards/' + event.data.recoveryKey)
-      .digest()
+    // Retrieve enrollment registry
+    let enrollments = await this.enrollments()
 
-    let revokekey = deriveWithHash(HDKey.fromMasterSeed(masterseed), hash)
-      .derive('m/0')
+    // Add new device to registry
+    enrollments.push({ type, name, deviceKey, signingKey })
 
-    // Tell FMS to revoke stored authed decrypt data.
-    let timestamp = Date.now()
-    hash = shajs('sha256').update(timestamp.toString()).digest()
-    let sig = secp256k1.sign(hash, revokekey.privateKey)
-
-    // XXX error handling
-    var fms_bundle = { 'hash': hash.toString('hex'), 'timestamp' : timestamp.toString(), 'sig' : sig.signature.toString('hex'), 'recovery' : sig.recovery }
-
-    var xhrPromise = new XMLHttpRequestPromise()
-    try {
-      let response = await xhrPromise.send({
-         'method': 'POST',
-         'url': config.apps.apis.fms + '/revoke',
-         'headers': {
-           'Content-Type': 'application/json;charset=UTF-8'
-         },
-         'data' : forgetme_upload
-      })
-      if (response.status != 200)
-         throw 'Got error ' + JSON.stringify(response)
-
-      let responsejson = JSON.parse(response.responseText)
-      if ('error' in responsejson)
-        throw error
-
-    } catch (err) {
-      alert('FMS revoke 1 (revokecard) failed, balking: ' + err)
-      return
-    }
-
-    event.source.postMessage({'revokecard': true}, event.origin)
-  }
-
-  // enrolldevice
-  //
-  async enrolldevice (event) {
-    // we get: 
-    // - devicepubkey
-    // - authpubkey
-    // - device name
-    let devicepubkey = Buffer.from(event.data.enrolldevice.devicepubkey, 'hex')
-    let authpubkey = Buffer.from(event.data.enrolldevice.authpubkey, 'hex')
-    authpubkey = secp256k1.publicKeyConvert(authpubkey, false)
-
-    let devicename = event.data.enrolldevice.devicename
-    let hash = shajs('sha256').update('zippie-devices/' + devicename).digest()
-
-    var masterseed = await getSeed()
-    var revokepubkey = secp256k1.publicKeyConvert(deriveWithHash(HDKey.fromMasterSeed(masterseed), hash).derive('m/0').publicKey, false)
-
-    var shares = secrets.share(masterseed.toString('hex'), 2, 2)
-    let ciphertext1 = await eccrypto.encrypt(devicepubkey, Buffer.from(shares[0], 'utf8'))
-    let ciphertext2 = await eccrypto.encrypt(devicepubkey, Buffer.from(shares[1], 'utf8'))
-
-    // Sent to enrolee
-    let ciphertext1_json = {
-      iv: ciphertext1.iv.toString('hex'), 
-      ephemPublicKey: ciphertext1.ephemPublicKey.toString('hex'),
-      ciphertext: ciphertext1.ciphertext.toString('hex'),
-      mac: ciphertext1.mac.toString('hex')
-    }
-
-    // Stored in FMS
-    let ciphertext2_dict = {
-      iv: ciphertext2.iv.toString('hex'), 
-      ephemPublicKey: ciphertext2.ephemPublicKey.toString('hex'),
-      ciphertext: ciphertext2.ciphertext.toString('hex'),
-      mac: ciphertext2.mac.toString('hex')
-    }
-
-    // contact forgetme server and upload {authpubkey, ciphertext2_json, revokepubkey}
-    let forgetme_upload = JSON.stringify({
-      'authpubkey' : authpubkey.toString('hex'),
-      'data': ciphertext2_dict,
-      'revokepubkey' : revokepubkey.toString('hex')
+    // Remove potential duplicates
+    let keys = enrollments.map(i => i.deviceKey)
+    enrollments = enrollments.filter((i, p) => {
+      return keys.indexOf(i.deviceKey) === p
     })
 
-    var xhrPromise = new XMLHttpRequestPromise()
-    try {
-      let response = await xhrPromise.send({
-         'method': 'POST',
-         'url': config.apps.apis.fms + '/store',
-         'headers': {
-           'Content-Type': 'application/json;charset=UTF-8'
-         },
-         'data' : forgetme_upload
-      })
-      if (response.status != 200)
-         throw 'Got error ' + JSON.stringify(response)
-      let responsejson = JSON.parse(response.responseText)
-      if ('error' in responsejson)
-        throw error
-    } catch (err) {
-      alert('FMS store 1 (enrolldevice) failed, balking: ' + err)
-      return
-    }
-
-    let keyhash = shajs('sha256')
-      .update('enrollments')
-      .digest()
-
-    let masterauth = deriveWithHash(HDKey.fromMasterSeed(masterseed), keyhash)
-      .derive('m/0')
-    let masterauthpub = secp256k1.publicKeyConvert(masterauth.publicKey, false)
-
-        // Add this new enrollment to local array in memory
-    enrollments.push({
-      type: 'card',
-      name: event.data.enrollcard.recoveryKey,
-      revokePubkey: revokepubkey.toString('hex')
-    })
-
-    // Generate latest device registry encrypted file
-    let ciphertext = await eccrypto.encrypt(
-      masterauthpub,
+    // Encrypt latest enrollments data
+    let cipher = await eccrypto.encrypt(
+      registryauthpub,
       Buffer.from(JSON.stringify(enrollments), 'utf8')
     )
 
-    let ciphertext_json = Buffer.from(JSON.stringify({
-      iv: ciphertext.iv.toString('hex'), 
-      ephemPublicKey: ciphertext.ephemPublicKey.toString('hex'),
-      ciphertext: ciphertext.ciphertext.toString('hex'),
-      mac: ciphertext.mac.toString('hex')
-    }), 'utf8')
+    // Encode cipher data to hex strings
+    Object.keys(cipher).map(k => {cipher[k] = cipher[k].toString('hex')})
 
-    console.log('Creating data signature.')
-    let datahash = shajs('sha256')
-      .update(ciphertext_json)
-      .digest()
+    console.info('VAULT: Uploading identity enrollment registry to permastore.')
+    return await this.permastore.store(registryauth.privateKey, cipher)
+  }
 
-    console.log(datahash)
-    console.log(masterauth)
-    let sig = await secp256k1.sign(
-      datahash,
-      masterauth.privateKey
+  /**
+   * Deregisters and revokes a card or device from a users identity.
+   */
+  //XXX: Reimplement as a CRDT TwoPhaseSet
+  async revoke (req) {
+    let params = req.revoke
+
+    // Derive revoke credentials for FMS device data.
+    let revokehash = shajs('sha256').update('devices/' + req.deviceKey).digest()
+    let revokeauth = await this.derive(revokehash)
+
+    let result = await this.fms.revoke(revokeauth.privateKey)
+
+    // Derive access credentials for permastore device registry.
+    let registryhash = shajs('sha256').update('devices').digest()
+    let registryauth = await this.derive(registryhash)
+    let registryauthpub = secp256k1.publicKeyConvert(registryauth.publicKey, false)
+
+    // Retrieve enrollment registry
+    let enrollments = await this.enrollments()
+
+    // Remove requested device enrollment and any duplicates.
+    let keys = enrollments.map(i => i.deviceKey)
+    enrollments = enrollments.filter((i, p) => {
+      return i.deviceKey !== params.deviceKey && keys.indexOf(i.deviceKey) === p
+    })
+
+    // Encrypt latest enrollments data
+    let cipher = await eccrypto.encrypt(
+      registryauthpub,
+      Buffer.from(JSON.stringify(enrollments), 'utf8')
     )
 
-    let rpk = secp256k1.recover(datahash, sig.signature, sig.recovery, false)
+    // Encode cipher data to hex strings
+    Object.keys(cipher).map(k => {cipher[k] = cipher[k].toString('hex')})
 
-    console.log('Storing enrollment registry in perma store.')
-    // Send POST request to update enrollment registry in permastore
-    xhr = new XMLHttpRequestPromise()
+    console.info('VAULT: Uploading identity enrollment registry to permastore.')
+    return await this.permastore.store(registryauth.privateKey, cipher)    
+  }
+
+
+  /**
+   * Signin application to Zippie Vault
+   */
+  async signin (req) {
+    this.plugin_exec('signin', req.origin, this.params.magiccookie)
+  }
+
+  /**
+   * Return a list of enrolled smartcards and devices registered to users identity.
+   */
+  //XXX: Reimplement as a CRDT TwoPhaseSet
+  async enrollments () {
+    let registryhash = shajs('sha256').update('devices').digest()
+    let registryauth = await this.derive(registryhash)
+    let registryauthpub = secp256k1.publicKeyConvert(registryauth.publicKey, false)
+
+    let result = await this.permastore.fetch(registryauthpub.toString('hex'))
     try {
-      let response = await xhr.send({
-        method: 'POST',
-        url: config.apps.apis.permastore + '/perma_store',
-        headers: {
-          'Content-Type': 'application/json;charset=UTF-8'
-        },
-        data: JSON.stringify({
-          data: ciphertext_json.toString('hex'),
-          sig: sig.signature.toString('hex'),
-          recovery: sig.recovery
-        })
-      })
+      if (!result) return []
 
-      if (response.status != 200) {
-        throw 'Got error ' + JSON.stringify(response)
-      }
+      // Convert cipher object from hex encoded to buffers for eccrypto
+      result = JSON.parse(Buffer.from(result.data, 'hex').toString('utf8'))
+      Object.keys(result).map(k => {result[k] = Buffer.from(result[k], 'hex')})
 
-      let responsejson = JSON.parse(response.responseText)
-
-      if ('error' in responsejson) throw error
+      // Decrypt data
+      result = await eccrypto.decrypt(registryauth.privateKey, result)
+      result = JSON.parse(result.toString('utf8'))
     } catch (e) {
-      alert('FMS perma store (enrolldevice) failed, balking: ' + err)
+      console.error('VAULT: Failed to process permastore response:', e)
+      return []
+    }
+
+    return result
+  }
+
+  /**
+   * MessageReceiver Interface
+   */
+  dispatchTo (mode, req) {
+    if (mode === 'root') { // ROOT-MODE ONLY RECEIVERS
+      if ('newidentity' in req) return this.newidentity
+      if ('revoke' in req) return this.revoke
+    }
+
+    if ('signin' in req) return this.signin
+    if ('enrollments' in req) return this.enrollments
+  }
+
+  /**
+   * MessageDispatch Interface
+   */
+  addReceiver (receiver) {
+    if (receiver.constructor === Array) {
+      this._receivers = this._receivers.concat(receiver)
       return
     }
 
-    event.source.postMessage({
-      'deviceenrollmentresponse' : ciphertext1_json
-    }, event.origin)
-  }
-
-  // finishenrollment
-  //
-  finishenrollment (event) {
-    // we get slice
-    store.get('devicePartiallySetup')
-      .then(r => {
-        if (r.result != undefined && r.result.value !== 1) {
-          return
-        }
-
-        let params = event.data.finishenrollment
-
-        return Promise.all([
-          store.set('localslice_e', JSON.stringify(params)),
-          store.set('vaultSetup', 1)
-        ]).then(_ => {
-          // we're now done, launch home
-          window.location = my_uri
-        })
-        .catch(e => {
-          console.error('Error in finishenrollment storing vault data:', e)
-        })
-      })
-  }
-
-  // checkenrollment
-  //
-  async checkenrollment (event) {
-    let salt = Buffer.from('3949edd685c135ed6599432db9bba8c433ca8ca99fcfca4504e80aa83d15f3c4', 'hex')
-    let derivedKey = crypto.pbkdf2Sync(event.data.checkenrollment.email, salt, 100000, 32, 'sha512')
-
-    let timestamp = Date.now()
-    let hash = shajs('sha256').update(timestamp.toString()).digest()
-    let sig = secp256k1.sign(hash, derivedKey)
-    // XXX error handling
-    var fms_bundle = { 'hash': hash.toString('hex'), 'timestamp' : timestamp.toString(), 'sig' : sig.signature.toString('hex'), 'recovery' : sig.recovery }
-
-    var xhrPromise = new XMLHttpRequestPromise()
-    try {
-      let response = await xhrPromise.send({
-        'method': 'POST',
-        'url': config.apps.apis.fms + '/fetch',
-        'headers': {
-          'Content-Type': 'application/json;charset=UTF-8'
-        },
-        'data': JSON.stringify(fms_bundle)
-      })
-      if (response.status != 200)
-        throw JSON.stringify(response)
-      if ('error' in JSON.parse(response.responseText)) {
-        event.source.postMessage({'enrollmentresult': 'no'}, event.origin)
-      } else {
-        event.source.postMessage({'enrollmentresult': 'yes'}, event.origin)
-      }
-    } catch (e) {
-      event.source.postMessage({'enrollmentresult': 'unknown'}, event.origin)
-    }
-  }
-
-  // newidentity
-  //
-  async newidentity (event) {
-    let masterseed = crypto.randomBytes(32)
-
-    // generate localkey as a outside-JS key ideally
-    console.log('Generating local and auth key.')
-    let local = await secp256k1GenerateKey()
-    let auth = await secp256k1GenerateKey()
-
-    let hash = shajs('sha256').update('zippie-devices/initial').digest()
-
-    console.log('Generating revoke key.')
-    var revokepubkey = secp256k1.publicKeyConvert(deriveWithHash(HDKey.fromMasterSeed(masterseed), hash).derive('m/0').publicKey, false)
-
-    console.log('Encrypting remote and local slices.')
-    var shares = secrets.share(masterseed.toString('hex'), 2, 2)
-    let ciphertext1 = await eccrypto.encrypt(local.publicKey, Buffer.from(shares[0], 'utf8'))
-    let ciphertext2 = await eccrypto.encrypt(local.publicKey, Buffer.from(shares[1], 'utf8'))
-
-    let ciphertext1_json = JSON.stringify({
-      iv: ciphertext1.iv.toString('hex'), 
-      ephemPublicKey: ciphertext1.ephemPublicKey.toString('hex'),
-      ciphertext: ciphertext1.ciphertext.toString('hex'),
-      mac: ciphertext1.mac.toString('hex')
-    })
-
-    let ciphertext2_dict = {
-      iv: ciphertext2.iv.toString('hex'), 
-      ephemPublicKey: ciphertext2.ephemPublicKey.toString('hex'),
-      ciphertext: ciphertext2.ciphertext.toString('hex'),
-      mac: ciphertext2.mac.toString('hex')
-    }
-    
-    // contact forgetme server and upload {authpubkey, ciphertext2_json, revokepubkey}
-    let forgetme_upload = JSON.stringify({
-      'authpubkey' : auth.publicKey.toString('hex'),
-      'data': ciphertext2_dict,
-      'revokepubkey': revokepubkey.toString('hex')
-    })
-
-    var xhrPromise = new XMLHttpRequestPromise()
-    try {
-      console.log('Storing remote slice')
-      let response = await xhrPromise.send({
-         'method': 'POST',
-         'url': config.apps.apis.fms +  '/store',
-         'headers': {
-           'Content-Type': 'application/json;charset=UTF-8'
-         },
-         'data': forgetme_upload
-      })
-      if (response.status != 200)
-         throw 'Got error ' + JSON.stringify(response2)
-      let responsejson = JSON.parse(response.responseText)
-      if ('error' in responsejson)
-        throw error
-    } catch (err) {
-      alert('FMS store 1 failed, balking: ' + err)
+    if (typeof receiver.dispatchTo === 'function') {
+      this._receivers.push(receiver)
       return
     }
 
-    /*
-    var salt = Buffer.from('3949edd685c135ed6599432db9bba8c433ca8ca99fcfca4504e80aa83d15f3c4', 'hex')
-    console.log('Generating revoke authkey')
-    var derivedKey = crypto.pbkdf2Sync(event.data.newidentity.email, salt, 10000, 32, 'sha512')
-    console.log('Generating revoke key')
-    var randomKey = crypto.randomBytes(32)
-
-    let derivedPubKey = secp256k1.publicKeyCreate(derivedKey, false)
-    forgetme_upload = JSON.stringify({
-      'authpubkey' : derivedPubKey.toString('hex'),
-      'data': {},
-      'revokepubkey': randomKey.toString('hex')
-    })
-
-    var url = fms_uri + '/store'
-    var xhrPromise = new XMLHttpRequestPromise()
-    try {
-      console.log('Storing revokation key')
-      let response2 = await xhrPromise.send({
-        'method': 'POST',
-        'url': url,
-        'headers': {
-          'Content-Type': 'application/json;charset=UTF-8'
-        },
-        'data': forgetme_upload
-      })
-      if (response2.status != 200)
-         throw 'Got error ' + JSON.stringify(response2)
-      let response2json = JSON.parse(response2.responseText)
-      if ('error' in response2json)
-        throw error
-
-    } catch (err) {
-      alert('FMS upload 2 failed, balking: ' + JSON.stringify(err))
-      return
-    }*/
-
-    console.log('Storing local identity into vault')
-    return Promise.all([
-        store.set('localkey', local.privateKey.toString('hex')),
-        store.set('authkey', auth.privateKey.toString('hex')),
-        store.set('localslice_e', ciphertext1_json),
-        store.set('vaultSetup', 1)
-      ])
-      .then(_ => {
-        // we're now done, launching
-        console.log('Identity created, redirecting...')
-        let uri = params['signup']
-        window.location = location.href.split('#')[0] + '#?launch=' + uri
-        window.location.reload()
-      })
-      .catch(e => {
-        console.error('Error storing identity locally:', e)
-      })
+    throw 'Invalid argument, expecting Array or MessageDispatch interface.'
   }
 
-  respondsTo (event) {
-    // Check we're root window, otherwise we don't respond.
-    if (window.top !== window) return false
+  /**
+   * MessageDispatch Reactor
+   */
+  async dispatch (event) {
+    let req = event.data
+    req.origin = event.origin
 
-    return ('open' in event.data) ||
-           ('qrscan' in event.data) ||
-           ('enrollcard' in event.data) ||
-           ('revokecard' in event.data) ||
-           ('enroleeinfo' in event.data) ||
-           ('enrolldevice' in event.data) ||
-           ('revokedevice' in event.data) ||
-           ('finishenrollment' in event.data) ||
-           ('checkenrollment' in event.data) ||
-           ('newidentity' in event.data)
-  }
+    console.info('VAULT: message received:', req)
+    if (!event.data) console.log('VAULT: ignoring invalid, probably noise...')
 
-  process (event) {
-    if ('open' in event.data) {
-      return this.open(event)
-    }
+    // ITP-2.0
+    // Called by parent when the user presses the "Zippie Signin" button.
+    //XXX: Not happy about this being here.
+    if ('login' in req) return requestStorage()
 
-    if ('qrscan' in event.data) {
-      return this.qrscan(event)
-    }
+    // Find message receiver
+    for (var i = 0; i < this._receivers.length; i++) {
+      let receiver = this._receivers[i].dispatchTo(this.mode, req)
+      if (!receiver) continue
 
-    if ('enrollcard' in event.data) {
-      return this.enrollcard(event)
-    }
-
-    if ('revokecard' in event.data) {
-      return this.revokecard(event)
-    }
-
-    if ('enroleeinfo' in event.data) {
-      return this.enroleeinfo(event)
-    }
-
-    if ('enrolldevice' in event.data) {
-      return this.enrolldevice(event)
-    }
-
-    if ('revokedevice' in event.data) {
-      return this.revokedevice(event)
-    }
-
-    if ('finishenrollment' in event.data) {
-      return this.finishenrollment(event)
-    }
-
-    if ('checkenrollment' in event.data) {
-      return this.checkenrollment(event)
-    }
-
-    if ('newidentity' in event.data) {
-      return this.newidentity(event)
-    }
-  }
-}
-
-//
-// Normal vault message processing
-//
-export class VaultMessageHandler {
-  init (event) {
-    if (inited) return
-    vaultInit(event)
-  }
-
-  qrscan (event) {
-    window.location = 'https://qrscan.io/'
-    window.reload()
-  }
-
-  // Enrolled Cards/Devices Registry
-  //
-  async getEnrollments (event) {
-    event.source.postMessage({
-      'callback': event.data.callback,
-      'result': enrollments.map(i => { return {type: i.type, name: i.name}})}, event.origin)
-  }
-
-  async getCardInfo (event) {
-    let info = null
-
-    for (let i = 0; i < enrollments.length; i++) {
-      let r = enrollments[i]
-      if (r.name === event.data.getCardInfo.recoveryKey) {
-        info = r
-        break
-      }
-    }
-
-    if (info) {
-      event.source.postMessage({
-        'callback': event.data.callback,
-        'result': {type: info.type, name: info.name}
-      }, event.origin)
-    } else {
-      event.source.postMessage({
-        'callback': event.data.callback,
-        'result': null
+      let response = await (receiver.bind(this))(req)
+      return event.source.postMessage({
+        callback: event.data.callback,
+        result: response
       }, event.origin)
     }
-    /*
-    let signature = Buffer.from(event.data.getCardInfo.signature, 'hex')
-    let signingKey = Buffer.from(event.data.getCardInfo.signingKey, 'hex')
-    signature = secp256k1.signatureImport(signature)
-    signingKey = secp256k1.publicKeyConvert(signingKey, false)
 
-    console.info('getCardInfo: Generating signed message hash...')
-    let cleartext = Buffer.concat([
-      Buffer.from('\x19Ethereum Signed Message:\n32', 'ascii'),
-      Buffer.from(event.data.getCardInfo.nonce, 'hex')
-    ])
-
-    console.info('getCardInfo: Discovering recovery key index from signature...')
-    let digest = crypto.createHash('sha256').update(cleartext).digest()
-    let v, p
-    for (v = 0; v < 4; v++) {
-      try {
-        var attempt = secp256k1.recover(digest, signature, v, false)
-      } catch (e) {
-        console.log('Failed to recover signature:', e)
-        continue
-      }
-
-      // Decompress and compare successful
-      if (!secp256k1.publicKeyConvert(attempt, false).equals(signingKey)) {
-        continue
-      }
-
-      p = attempt
-      break
-    }
-
-    if (!p) {
-      console.error("Failed to recover public key from card signature!")
-      return
-    }
-
-    console.info('getCardInfo: Querying forget me service...')
-    let xhr = new XMLHttpRequestPromise()
-    let response = await xhr.send({
-      'method': 'POST',
-      'url': fms_uri + '/fetch',
-      'headers': {
-        'Content-Type': 'application/json;charset=UTF-8'
-      },
-      'data': JSON.stringify({
-        'timestamp': cleartext.toJSON().data,
-        'sig': signature.toString('hex'),
-        'recovery': v
-      })
-    })
-
-    if (response.status != 200) {
-      event.source.postMessage({
-        'callback': event.data.callback,
-        'result': null
-      }, event.origin)
-      return
-    }
-
-    if ('error' in JSON.parse(response.responseText)) {
-      event.source.postMessage({
-        'callback': event.data.callback,
-        'result': null
-      }, event.origin)
-      return
-    }
-
-    event.source.postMessage({
-      'callback': event.data.callback,
-      'result': JSON.parse(response.responseText)
-    }, event.origin)
-    */
-  }
-
-  getDeviceInfo (event) {
-  }
-
-  secp256k1KeyInfo (event) {
-    // this doesn't give hardened keys for now
-    // key { derive: 'm/0' }
-    var ahdkey = pubex_hdkey.derive(event.data.secp256k1KeyInfo.key.derive)
-    var pubkey = secp256k1.publicKeyConvert(ahdkey.publicKey, false)
-    // SEC1 form return
-    event.source.postMessage({'callback' : event.data.callback, 'result' : { 'pubkey' : pubkey.toString('hex'), 'pubex' : ahdkey.publicExtendedKey }}, event.origin)
-  }
-
-  secp256k1Sign (event) {
-    // key { derive 'm/0' }
-
-    // we need to grab a private key for this
-    getAppPrivEx().then((privex_hdkey) => {
-      var from = privex_hdkey.derive(event.data.secp256k1Sign.key.derive)
-      var sig = secp256k1.sign(Buffer.from(event.data.secp256k1Sign.hash, 'hex'), from.privateKey)
-      event.source.postMessage({'callback' : event.data.callback, 'result' : { signature: sig.signature.toString('hex'), recovery: sig.recovery, hash: event.data.secp256k1Sign.hash } }, event.origin)
-    })
-  }
-
-  secp256k1Encrypt (event) {
-    var ecpub = Buffer.from(event.data.secp256k1Encrypt.pubkey, 'hex');
-    var plaintext = Buffer.from(event.data.secp256k1Encrypt.plaintext, 'hex');
-    eccrypto.encrypt(ecpub, plaintext)
-      .then(function (response) {
-        var rep = {
-          iv: response.iv.toString('hex'),
-          ephemPublicKey: response.ephemPublicKey.toString('hex'),
-          ciphertext: response.ciphertext.toString('hex'),
-          mac: response.mac.toString('hex')
-        }
-        event.source.postMessage({'callback' : event.data.callback, 'result' : rep }, event.origin)
-      })
-  }
-
-  secp256k1Decrypt (event) {
-    getAppPrivEx().then(privex_hdkey => {
-      var to = privex_hdkey.derive(event.data.secp256k1Decrypt.key.derive)
-      var ecpriv = to.privateKey
-      var response = {
-        iv: Buffer.from(event.data.secp256k1Decrypt.iv, 'hex'),
-        ephemPublicKey: Buffer.from(event.data.secp256k1Decrypt.ephemPublicKey, 'hex'),
-        ciphertext: Buffer.from(event.data.secp256k1Decrypt.ciphertext, 'hex'),
-        mac: Buffer.from(event.data.secp256k1Decrypt.mac, 'hex')
-      }
-
-      eccrypto.decrypt(ecpriv, response)
-        .then(function(buf) {
-          event.source.postMessage({'callback' : event.data.callback, 'result' : buf.toString('hex') }, event.origin);
-        })
-    })
-  }
-
-  respondsTo (event) {
-    return ('init' in event.data) ||
-           ('qrscan' in event.data) ||
-           ('getEnrollments' in event.data) ||
-           ('getCardInfo' in event.data) ||
-           ('getDeviceInfo' in event.data) ||
-           ('secp256k1KeyInfo' in event.data) ||
-           ('secp256k1Sign' in event.data) ||
-           ('secp256k1Encrypt' in event.data) ||
-           ('secp256k1Decrypt' in event.data)
-  }
-
-  process (event) {
-    if ('init' in event.data) {
-      return this.init(event)
-    }
-
-    if ('qrscan' in event.data) {
-      return this.qrscan(event)
-    }
-
-    if ('getEnrollments' in event.data) {
-      return this.getEnrollments(event)
-    }
-
-    if ('getCardInfo' in event.data) {
-      return this.getCardInfo(event)
-    }
-
-    if ('getDeviceInfo' in event.data) {
-      return this.getDeviceInfo(event)
-    }
-
-    if ('secp256k1KeyInfo' in event.data) {
-      return this.secp256k1KeyInfo(event)
-    }
-
-    if ('secp256k1Sign' in event.data) {
-      return this.secp256k1Sign(event)
-    }
-
-    if ('secp256k1Encrypt' in event.data) {
-      return this.secp256k1Encrypt(event)
-    }
-
-    if ('secp256k1Decrypt' in event.data) {
-      return this.secp256k1Decrypt(event)
-    }
+    console.warn('VAULT: message not handled, unknown type:', event)
   }
 }
 

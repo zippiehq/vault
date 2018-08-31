@@ -20,38 +20,46 @@
  * SOFTWARE.
  *
  */
-import Vault from './vault.js'
-import VERSION from '../version.js'
 
 /**
- * Detect Runtime Exection Mode
+ * Vault Miscellaneous Actions Provider Plugin
  */
-var runtime_mode = 'release'
-
-if (window.location.host.indexOf('localhost') !== -1) {
-  runtime_mode = 'development'
-} else if (window.location.host.indexOf('dev.zippie.org') !== -1) {
-  runtime_mode = 'development'
-} else if (window.location.host.indexOf('testing.zippie.org') !== -1) {
-  runtime_mode = 'testing'
-}
-
-/**
- * Import Runtime Configuration
- */
-var config = require('../zippie.config.js')[runtime_mode]
-console.info('VAULT: Runtime Mode:', runtime_mode)
-
-/**
- * Vault Entry-Point
- */
-window.addEventListener('load', function () {
-  let vault = new Vault(config)
-
-  if (runtime_mode === 'development' || runtime_mode === 'testing') {
-    window.vault = vault
+export default class {
+  /**
+   *
+   */
+  install (vault) {
+    this.vault = vault
+    vault.addReceiver(this)
   }
 
-  vault.startup()
-})
+  /**
+   *
+   */
+  async open (req) {
+    console.info('VAULT: Opening external URI:', req.uri)
+    window.location = req.uri
+    return true
+  }
 
+  /**
+   *
+   */
+  async qrscan (req) {
+    console.info('VAULT: Opening qrscan.io:', req.uri)
+    window.location = 'https://qrscan.io'
+    return true
+  }
+
+  /**
+   * MessageDispatcher Interface
+   */
+  dispatchTo (mode, req) {
+    if (mode === 'root') { // ROOT-MODE ONLY RECEIVERS
+      if ('open' in req) return this.open
+      else if ('qrscan' in req) return this.qrscan
+    }
+
+    return null
+  }
+}

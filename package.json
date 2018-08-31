@@ -17,7 +17,7 @@
     "secrets.js-grempe": "^1.1.0",
     "sha.js": "^2.4.10",
     "store": "^2.0.12",
-    "webpack": "^4.17.1",
+    "webpack": "4.19.1",
     "webpack-cli": "^2.0.9",
     "xhr-promise": "^2.0.0"
   },
