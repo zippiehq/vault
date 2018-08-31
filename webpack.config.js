@@ -1,13 +1,27 @@
 const path = require('path');
-const UglifyJSPlugin = require('uglifyjs-webpack-plugin');
+const webpack = require('webpack')
+
+//const UglifyJSPlugin = require('uglifyjs-webpack-plugin');
 
 module.exports = {
   mode: 'development',
 
   entry: {
-    worker: ['@babel/polyfill', path.resolve(__dirname, 'worker') + '/worker.js'],
       boot: ['@babel/polyfill', path.resolve(__dirname, 'src') + '/boot.js']
   },
+
+  devtool: 'inline-source-map',
+
+  devServer: {
+    https: true,
+    port: 8443,
+    contentBase: './dist',
+    hot: true
+  },
+
+  plugins: [
+    new webpack.HotModuleReplacementPlugin()
+  ],
 
 /*   plugins: [
     new UglifyJSPlugin()

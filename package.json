@@ -5,8 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "webpack",
-    "build-dev": "webpack; openssl req -x509 -newkey rsa:4096 -nodes -keyout key.pem -out cert.pem -days 365 -subj \"/C=US/ST=./L=./O=./CN=.\"",
-    "dev": "webpack; cd dist; http-server -p 8443 -S -K ../key.pem -C ../cert.pem"
+    "dev": "webpack; webpack-dev-server"
   },
   "author": "",
   "license": "ISC",
@@ -27,6 +26,7 @@
     "@babel/polyfill": "^7.0.0-rc.2",
     "@babel/preset-env": "^7.0.0-rc.2",
     "babel-loader": "^8.0.0-beta.6",
-    "http-server": "^0.11.1"
+    "http-server": "^0.11.1",
+    "webpack-dev-server": "^3.1.5"
   }
 }
