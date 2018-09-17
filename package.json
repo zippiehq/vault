@@ -1,15 +1,15 @@
 {
   "name": "zippie-vault",
   "version": "1.0.0",
-  "description": "",
+  "description": "ServiceWorker based key store",
   "main": "index.js",
   "scripts": {
     "build": "webpack",
     "build-dev": "webpack; openssl req -x509 -newkey rsa:4096 -nodes -keyout key.pem -out cert.pem -days 365 -subj \"/C=US/ST=./L=./O=./CN=.\"",
     "dev": "webpack; cd dist; http-server -p 8443 -S -K ../key.pem -C ../cert.pem"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "Zippie Ltd.",
+  "license": "Commercial/AGPLv3",
   "dependencies": {
     "eccrypto": "^1.0.3",
     "hdkey": "^0.8.0",

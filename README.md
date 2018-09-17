@@ -39,5 +39,4 @@ set up web host with HTTPS
 copy dist folder
 
 ## License
-
-## Contibuting
+[Commercial / AGPLv3](LICENSE)
