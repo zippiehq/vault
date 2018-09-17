@@ -1,14 +1,14 @@
 {
   "name": "zippie-vault",
   "version": "1.0.0",
-  "description": "",
+  "description": "ServiceWorker based key store",
   "main": "index.js",
   "scripts": {
     "build": "webpack",
     "dev": "webpack; webpack-dev-server"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "Zippie Ltd.",
+  "license": "Commercial/AGPLv3",
   "dependencies": {
     "eccrypto": "^1.0.3",
     "hdkey": "^0.8.0",
