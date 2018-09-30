@@ -86,7 +86,7 @@ export default class FMS {
     let tstamp_hash = shajs('sha256').update(tstamp).digest()
 
     // Generate timestamp signature
-    let tstamp_sig = secp256k1.sign(tstamp_hash, Buffer.from(authkey, 'hex'))
+    let tstamp_sig = secp256k1.sign(tstamp_hash, authkey)
 
     // Perform XHR request to FMS to get remote slice.
     let req = {

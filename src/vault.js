@@ -353,24 +353,31 @@ export default class Vault {
     }
 
     // Authkey used to index remote slice from FMS
-    let authkey = await this.store.getItem('authkey')
+    let authkey = this.store.getItem('authkey')
     if (!authkey) {
       console.error('VAULT: Failed to retrieve authkey from store.')
       return null
     }
+
+    // Translate hex encoded key to Buffer instance.
+    //XXX: Fix in identity migration code.
+    if (authkey[0] === '"') authkey = JSON.parse(authkey)
+    authkey = Buffer.from(authkey, 'hex')
 
     // Retrieve encrypted remote slice from FMS
     let rcipher = await this.fms.fetch(authkey)
     if  (!rcipher) return null
 
     // Retrieve localkey from store for decrypting remote slice from FMS
-    let localkey = await this.store.getItem('localkey')
+    let localkey = this.store.getItem('localkey')
     if (!localkey) {
       console.error('VAULT: Failed to retrieve localkey from store')
       return null
     }
 
-    // Translate hex encoded key to Buffer instances.
+    // Translate hex encoded key to Buffer instance.
+    //XXX: Fix in identity migration code.
+    if (localkey[0] === '"') localkey = JSON.parse(localkey)
     localkey = Buffer.from(localkey, 'hex')
 
     // Translate hex encoded values to Buffer instances.
@@ -387,6 +394,9 @@ export default class Vault {
       console.error('VAULT: Failed to retrieve localslice from store')
       return null
     }
+
+    //XXX: Fix in identity migration code.
+    if (lcipher[0] === '"') lcipher = JSON.parse(lcipher)
 
     try {
       lcipher = JSON.parse(lcipher)

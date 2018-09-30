@@ -92,11 +92,13 @@ export default class Secp256k1Provider {
 
     let k = await (await this.privex(req.origin)).derive(params.key.derive).privateKey
     var cipher = {}
-    ['iv', 'ephemPublicKey', 'ciphertext', 'mac'].forEach(i => {
+
+    let keys = ['iv', 'ephemPublicKey', 'ciphertext', 'mac']
+    keys.forEach(i => {
       cipher[i] = Buffer.from(params[i], 'hex')
     })
-
-    return await eccrypto.decrypt(k, cipher).toString('hex')
+    
+    return (await eccrypto.decrypt(k, cipher)).toString('hex')
   }
 
   /**
