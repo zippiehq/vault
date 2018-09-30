@@ -337,7 +337,9 @@ export default class Vault {
   async isSetup () {
     if (!this._isSetup) {
       this._isSetup = (await this.store.getItem('isSetup')) ? true : false
+      this._isSetup = this._isSetup || (await this.store.getItem('vaultSetup')) ? true : false
     }
+
     return this._isSetup
   }
 
