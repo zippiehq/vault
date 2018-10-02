@@ -219,36 +219,36 @@ export default class Vault {
     await this.plugin_exec('startup')
 
     if (this.mode === 'enclave') {
+      // Webkit ITP 2.0 Support
+      //XXX: Not happy about this being here.
+      //     Move to plugin
+      if (document.hasStorageAccess !== undefined) {
+        console.info('VAULT: ITP-2.0: browser support detected, checking storage status.')
+        return document.hasStorageAccess()
+          .then(
+            r => {
+              if (r === false) {
+                console.info('VAULT: ITP-2.0: Vault does not have storage access.')
+                parent.postMessage({login: null}, '*')
+                return Promise.resolve()
+              }
+
+              // Post vault ready.
+              console.info('VAULT: ITP-2.0: Setup complete.')
+              parent.postMessage({ready: true}, '*')
+              return Promise.resolve()
+            },
+            e => {
+              console.error('VAULT: ITP-2.0: hasStorageAccess:', e)
+              parent.postMessage({error: 'ITP-2.0'})
+              return Promise.reject(e)
+            }
+          )
+      }
+
       window.top.postMessage({ready: true}, '*')
     }
     return
-
-    // Webkit ITP 2.0 Support
-    //XXX: Not happy about this being here.
-    //     Move to plugin
-    if (document.hasStorageAccess !== undefined) {
-      console.info('VAULT: ITP-2.0: browser support detected, checking storage status.')
-      return document.hasStorageAccess()
-        .then(
-          r => {
-            if (r === false) {
-              console.info('VAULT: ITP-2.0: Vault does not have storage access.')
-              parent.postMessage({login: null}, '*')
-              return Promise.resolve()
-            }
-
-            // Post vault ready.
-            console.info('VAULT: ITP-2.0: Setup complete.')
-            parent.postMessage({ready: true}, '*')
-              return Promise.resolve()
-          },
-          e => {
-            console.error('VAULT: ITP-2.0: hasStorageAccess:', e)
-            parent.postMessage({error: 'ITP-2.0'})
-            return Promise.reject(e)
-          }
-        )
-    }
   }
 
   /**
