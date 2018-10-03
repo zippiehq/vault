@@ -81,7 +81,7 @@ export default class {
       if (!await this.vault.isSetup()) {
         this.vault.launch(this.vault.config.apps.root.signup, { root: true })
         .then(function () {
-          return this.vault.launch(this.vault.config.apps.root.card, { root: true })
+          return this.vault.launch(this.vault.config.apps.root.card + '#/' + this.vault.params.card, { root: true })
         }.bind(this))
         .then(function () {
           return this.vault.launch(this.vault.config.apps.user.home)
@@ -90,7 +90,7 @@ export default class {
       }
 
       //TODO: Decide what to do after card app does it's thing (close window?)
-      this.vault.launch(this.vault.config.apps.root.card, {
+      this.vault.launch(this.vault.config.apps.root.card + '#/' + this.vault.params.card, {
         root: true
       })
 

@@ -21,6 +21,7 @@
  *
  */
 import crypto from 'crypto'
+import eccrypto from 'eccrypto'
 import secp256k1 from 'secp256k1'
 import shajs from 'sha.js'
 
@@ -39,68 +40,87 @@ export default class {
   /**
    *
    */
-  async enrollcard (req) {
-    let params = req.enrollcard
-    let masterseed = await this.getMasterSeed()
+  async cardinfo (req) {
+    let info = null
+    let enrollments = await this.enrollments()
 
-    // Decode recoveryKey parameter
-    let recoverypub = secp256k1.publicKeyConvert(
-      Buffer.from(params.recoveryKey, 'hex'),
-      false
-    )
-
-    // Decode signingKey parameter
-    let signingpub = secp256k1.publicKeyConvert(
-      Buffer.from(params.signingKey, 'hex'),
-      false
-    )
-
-    // Generate card recovery data revoke key
-    console.info('VAULT: Deriving card revokation key.')
-    let revokehash = shajs('sha256')
-      .update('devices/' + recoverypub.toString('hex')).digest()
-
-    let revokepub = secp256k1.publicKeyConvert(
-      await this.derive(revokehash).derive('m/0').publicKey,
-      false
-    )
-
-    // Build card recovery data
-    console.info('VAULT: Generate card recovery data.')
-    let secret = shajs('sha256').update(params.passphrase).digest()
-    let maxtries = new Buffer(2)
-    maxtries.writeUInt16BE(3)
-
-    console.info('VAULT: Encrypting card recovery data.')
-    let recovery = await eccrypto.encrypt(
-      recoverypub,
-      Buffer.concat([
-        secret,
-        maxtries,
-        masterseed
-      ])
-    )
-
-    // Convert buffers to hex.
-    Object.keys(recovery).map(k => { recovery[k] = recovery[k].toString('hex')})
-
-    console.info('VAULT: Attempting to store card recovery data to FMS')
-    // Upload recovery data to FMS
-    if (!await this.fms.store(signingpub, revokepub, recovery)) {
-      console.error('VAULT: Failed to store card recovery data in FMS!')
-      return false
+    for (let i = 0; i < enrollments.length; i++) {
+      let r = enrollments[i]
+      if (r.recoveryKey === req.cardinfo.recoveryKey) {
+        info = r
+        break
+      }
     }
-    console.info('VAULT: Recovery data upload success.')
 
-    // Update device enrollments registry
-    await this.enroll(
-      'card',
-      recoverypub.toString('hex').slice(-8),
-      recoverypub.toString('hex'),
-      signingpub.toString('hex')
-    )
+    return info
+  }
 
-    return true
+  /**
+   *
+   */
+  async enrollcard (req) {
+    return await this.withMasterSeed(async function (masterseed) {
+      let params = req.enrollcard
+
+      // Decode recoveryKey parameter
+      let recoverypub = secp256k1.publicKeyConvert(
+        Buffer.from(params.recoveryKey, 'hex'),
+        false
+      )
+
+      // Decode signingKey parameter
+      let signingpub = secp256k1.publicKeyConvert(
+        Buffer.from(params.signingKey, 'hex'),
+        false
+      )
+
+      // Generate card recovery data revoke key
+      console.info('VAULT: Deriving card revokation key.')
+      let revokehash = shajs('sha256')
+        .update('devices/' + recoverypub.toString('hex')).digest()
+
+      let revokepub = secp256k1.publicKeyConvert(
+        await (await this.derive(revokehash)).derive('m/0').publicKey,
+        false
+      )
+
+      // Build card recovery data
+      console.info('VAULT: Generate card recovery data.')
+      let secret = shajs('sha256').update('000000').digest()
+      let maxtries = new Buffer(2)
+      maxtries.writeUInt16BE(3)
+
+      console.info('VAULT: Encrypting card recovery data.')
+      let recovery = await eccrypto.encrypt(
+        recoverypub,
+        Buffer.concat([
+          secret,
+          maxtries,
+          masterseed
+        ])
+      )
+
+      // Convert buffers to hex.
+      Object.keys(recovery).map(k => { recovery[k] = recovery[k].toString('hex')})
+
+      console.info('VAULT: Attempting to store card recovery data to FMS')
+      // Upload recovery data to FMS
+      if (!await this.fms.store(signingpub, revokepub, recovery)) {
+        console.error('VAULT: Failed to store card recovery data in FMS!')
+        return false
+      }
+      console.info('VAULT: Recovery data upload success.')
+
+      // Update device enrollments registry
+      await this.enroll(
+        'card',
+        recoverypub.toString('hex').slice(-8),
+        recoverypub.toString('hex'),
+        signingpub.toString('hex')
+      )
+
+      return true
+    }.bind(this))
   }
 
   /**
@@ -183,6 +203,8 @@ export default class {
    * MessageReceiver Interface
    */
   dispatchTo (mode, req) {
+    if ('cardinfo' in req) return this.cardinfo
+
     if (mode === 'root') { // ROOT-MODE ONLY RECEIVERS
       if ('enrollcard' in req) return this.enrollcard
       else if ('revokecard' in req) return this.revokecard
@@ -190,6 +212,6 @@ export default class {
       else if ('enrolldevice' in req) return this.enrolldevice
       else if ('revokedevice' in req) return this.revokedevice
       else if ('finishenrollment' in req) return this.finishenrollment
-    }
+    } 
   }
 }
