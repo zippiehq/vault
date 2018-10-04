@@ -248,7 +248,6 @@ export default class Vault {
 
       window.top.postMessage({ready: true}, '*')
     }
-    return
   }
 
   /**
@@ -683,6 +682,7 @@ export default class Vault {
    */
   dispatchTo (mode, req) {
     if (mode === 'root') { // ROOT-MODE ONLY RECEIVERS
+      if ('launch' in req) return (function (req) { this.launch(req.launch.url, req.launch.opts) })
       if ('newidentity' in req) return this.newidentity
       if ('revoke' in req) return this.revoke
     }
