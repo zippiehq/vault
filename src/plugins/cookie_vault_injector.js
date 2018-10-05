@@ -131,6 +131,8 @@ export default class {
       let k = keys[i]
       data[k] = this.vault.store.getItem(k)
     }
+
+    data.isSetup = true
     data = Buffer.from(JSON.stringify(data), 'utf8')
 
     console.info('VAULT: Encrypting vault data injection cookie.')
