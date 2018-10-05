@@ -37,9 +37,8 @@ export default class {
    *
    */
   async open (req) {
-    console.info('VAULT: Opening external URI:', req.uri)
-    window.location = req.uri
-    return true
+    console.info('VAULT: Opening external URI:', req.open.uri)
+    window.location = req.open.uri
   }
 
   /**
