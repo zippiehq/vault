@@ -4,8 +4,8 @@
   "description": "ServiceWorker based key store",
   "main": "index.js",
   "scripts": {
-    "build": "webpack",
-    "dev": "webpack; webpack-dev-server"
+    "build": "webpack --config webpack.prod.config.js",
+    "dev": "webpack --config webpack.dev.config.js; webpack-dev-server --config webpack.dev.config.js"
   },
   "author": "Zippie Ltd.",
   "license": "Commercial/AGPLv3",

@@ -5,7 +5,7 @@ WORKDIR /app
 # Add sources
 ADD dist /app/dist
 ADD package.json /app/package.json
-ADD webpack.config.js /app/webpack.config.js
+ADD webpack.prod.config.js /app/webpack.prod.config.js
 ADD zippie.config.js /app/zippie.config.js
 ADD version.js /app/version.js
 ADD src /app/src

@@ -1,31 +1,15 @@
 const path = require('path');
 const webpack = require('webpack')
-
-//const UglifyJSPlugin = require('uglifyjs-webpack-plugin');
+const UglifyJsPlugin = require('uglifyjs-webpack-plugin');
 
 module.exports = {
-  mode: 'development',
+  mode: 'production',
 
   entry: {
       boot: ['@babel/polyfill', path.resolve(__dirname, 'src') + '/boot.js']
   },
 
   devtool: 'inline-source-map',
-
-  devServer: {
-    https: true,
-    port: 8443,
-    contentBase: './dist',
-    hot: true
-  },
-
-  plugins: [
-    new webpack.HotModuleReplacementPlugin()
-  ],
-
-/*   plugins: [
-    new UglifyJSPlugin()
-  ], */
 
   module: {
     rules: [
@@ -38,6 +22,11 @@ module.exports = {
 	},
       },
     ],
+  },
+
+  optimization: {
+    minimize: true,
+    minimizer: [new UglifyJsPlugin()]
   },
 
   output: {
