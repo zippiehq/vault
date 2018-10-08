@@ -46,7 +46,7 @@ export default class {
 
     for (let i = 0; i < enrollments.length; i++) {
       let r = enrollments[i]
-      if (r.recoveryKey === req.cardinfo.recoveryKey) {
+      if (r.deviceKey === req.cardinfo.deviceKey) {
         info = r
         break
       }
