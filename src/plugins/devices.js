@@ -178,7 +178,7 @@ export default class {
       }
 
       return lcipher
-    })
+    }.bind(this))
   }
 
   /**
