@@ -97,6 +97,14 @@ export default class {
       return
     }
 
+    // https://vault.zippie.org/#?pinauth=v
+    if ('pinauth' in this.vault.params) {
+      this.vault.launch(this.vault.config.apps.root.pinauth, { root: true })
+      .then(function () {
+        alert('USER AUTHENTICATED, NOW WHAT?!')
+      })
+    }
+
     // https://vault.zippie.org/#?enroll=v
     if ('enroll' in this.vault.params) {
       this.vault.launch(this.vault.config.apps.root.signup + '/#/enroll/' + this.vault.params.enroll, { root: true })

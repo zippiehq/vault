@@ -6,7 +6,7 @@ module.exports = {
     },
     apps: {
       root: {
-        auth: 'https://pin.dev.zippie.org',
+        pinauth: 'https://pin.dev.zippie.org',
         card: 'https://card.dev.zippie.org/v0.1/',
         signup: 'https://signup.dev.zippie.org'
       },
@@ -23,7 +23,7 @@ module.exports = {
     },
     apps: {
       root: {
-        auth: 'https://pin.testing.zippie.org',
+        pinauth: 'https://pin.testing.zippie.org',
         card: 'https://card.testing.zippie.org/v0.1/',
         signup: 'https://signup.testing.zippie.org'
       },
@@ -40,7 +40,7 @@ module.exports = {
     },
     apps: {
       root: {
-        auth: 'https://pin.zippie.org',
+        pinauth: 'https://pin.zippie.org',
         card: 'https://card.zippie.org/v0.1/',
         signup: 'https://signup.zippie.org'
       },
