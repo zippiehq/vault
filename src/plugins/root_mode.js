@@ -99,6 +99,7 @@ export default class {
 
     // https://vault.zippie.org/#?enroll=v
     if ('enroll' in this.vault.params) {
+      this.vault.launch(this.vault.config.apps.root.signup + '/#/enroll/' + this.vault.params.enroll, { root: true })
       return
     }
   }
