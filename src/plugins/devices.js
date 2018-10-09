@@ -159,7 +159,7 @@ export default class {
 
     return await this.withMasterSeed(async function (masterseed) {
       // Generate device revokation key
-      let revokekey = await this.derive(devhash).derive('m/0')
+      let revokekey = await (await this.derive(devhash)).derive('m/0')
       let revokepub = secp256k1.publicKeyConvert(revokekey.pubblicKey, false)
 
       // Split masterseed into device and remote components.
