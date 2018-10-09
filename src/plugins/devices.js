@@ -23,6 +23,7 @@
 import crypto from 'crypto'
 import eccrypto from 'eccrypto'
 import secp256k1 from 'secp256k1'
+import secrets from 'secrets.js-grempe'
 import shajs from 'sha.js'
 
 /**
