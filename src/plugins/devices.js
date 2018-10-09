@@ -160,12 +160,12 @@ export default class {
     return await this.withMasterSeed(async function (masterseed) {
       // Generate device revokation key
       let revokekey = await (await this.derive(devhash)).derive('m/0')
-      let revokepub = secp256k1.publicKeyConvert(revokekey.pubblicKey, false)
+      let revokepub = secp256k1.publicKeyConvert(revokekey.publicKey, false)
 
       // Split masterseed into device and remote components.
       let shares = secrets.share(masterseed.toString('hex'), 2, 2)
-      let lcipher = await eccrypto.encrypt(devicepub, Buffer.from(shares[0], 'utf8'))
-      let rcipher = await eccrypto.encrypto(devicepub, Buffer.from(shares[1], 'utf8'))
+      let lcipher = await eccrypto.encrypt(devpub, Buffer.from(shares[0], 'utf8'))
+      let rcipher = await eccrypto.encrypt(devpub, Buffer.from(shares[1], 'utf8'))
 
       // Convert ciphertext objects from buffers to hex strings.
       Object.keys(lcipher).map(k => {lcipher[k] = lcipher[k].toString('hex')})
