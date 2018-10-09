@@ -191,10 +191,13 @@ export default class {
     this.store.setItem('localslice_e',  JSON.stringify(params))
     this.store.setItem('isSetup', true)
 
+    let localkey = Buffer.from(this.store.getItem('localkey'), 'hex')
+    let localpub = secp256k1.publicKeyCreate(localkey, false)
+
     await this.enroll(
       'device',
-      this.store.getItem('localkey').slice(-8),
-      this.store.getItem('localkey')
+      localpub.toString('hex').slice(-8),
+      localpub.toString('hex')
     )
 
     return this.launch(this.config.apps.user.home)
