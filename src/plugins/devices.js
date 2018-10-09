@@ -197,7 +197,7 @@ export default class {
       this.store.getItem('localkey')
     )
 
-    return true
+    return this.launch(this.config.apps.user.home)
   }
 
   /**
