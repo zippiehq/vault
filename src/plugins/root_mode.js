@@ -23,17 +23,29 @@
 
 /**
  * Vault "Root" Mode Plugin
+ *
+ * In root mode, we accept fragment parameters to specify some vault launch
+ * behaviors. This plugin defines these start up behaviours. Such as, wiping
+ * vault data, launching signup UX, logging in to a dapp, launching card
+ * registration / authentication UX, and PIN code entry UX.
+ *
+ *
+ * TODO: Refactor to allow other plugins to register their root functions, so we
+ *   can move out the functionality into their respective vault plugin source
+ *   files.
+ *
  */
 export default class {
   /**
-   *
+   * Initialize plugin with the vault instance.
    */
   install (vault) {
     this.vault = vault
   }
 
   /**
-   *
+   * Plugin hook, invoked on vault startup to process URI fragment and act
+   * accordingly.
    */
   async startup () {
     if (this.vault.mode !== 'root') return

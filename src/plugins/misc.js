@@ -26,7 +26,7 @@
  */
 export default class {
   /**
-   *
+   * Initialize plugin with vault instance.
    */
   install (vault) {
     this.vault = vault
@@ -34,7 +34,7 @@ export default class {
   }
 
   /**
-   *
+   *  In root mode replaces vault with some external URI.
    */
   async open (req) {
     console.info('VAULT: Opening external URI:', req.open.uri)
@@ -42,7 +42,7 @@ export default class {
   }
 
   /**
-   *
+   *  In root mode replaces vault with qrscan.io site.
    */
   async qrscan (req) {
     console.info('VAULT: Opening qrscan.io:', req.uri)

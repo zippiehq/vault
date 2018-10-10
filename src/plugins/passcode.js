@@ -26,13 +26,24 @@ import shajs from 'sha.js'
 
 
 /**
- * Vault secp256k1 Provider Plugin
+ * Vault Passcode Provider Plugin
+ *
+ * This plugin provides the ability to manage and verify user actions with a
+ * passcode, passphrase, or PIN code. The API is only accessible to root
+ * vault applications like the Zippie Signup, PIN and Card UXs.
+ *
  */
 export default class PasscodeProvider {
   /**
-   *
+   * Request:
+   *   passcode: {
+   *     assign: {
+   *       id: 'smartcard-recovery',
+   *       passcode: 'passcode|passphrase|pincode'
+   *     }
+   *   }
    */
-  async assignPasscode (req) {
+  async assign (req) {
     return await this.withMasterSeed(async function () {
       let params = req.passcode.assign
       let recordhash = shajs('sha256').update('passcodes/' + params.id).digest()
@@ -58,9 +69,14 @@ export default class PasscodeProvider {
   }
 
   /**
-   *
+   * Request:
+   *   passcode: {
+   *     revoke: {
+   *       id: 'smartcard-recovery'
+   *     }
+   *   }
    */
-  async revokePasscode (req) {
+  async revoke (req) {
     return await this.withMasterSeed(async function () {
       let params = req.passcode.revoke
       let recordhash = shajs('sha256').update('passcodes/' + params.id).digest()
@@ -72,9 +88,16 @@ export default class PasscodeProvider {
   }
 
   /**
-   *
+   * Request:
+   *   passcode: {
+   *     verify: {
+   *       id: 'smartcard-recovery',
+   *       salt: 'some salt value',
+   *       hash: 'passcode|passphrase|pincode'
+   *     }
+   *   }
    */
-  async verifyPasscode (req) {
+  async verify (req) {
     return await this.withMasterSeed(async function () {
       let params = req.passcode.verify
 
@@ -113,9 +136,9 @@ export default class PasscodeProvider {
   dispatchTo (mode, req) {
     if (mode !== 'root' || !('passcode' in req)) return
 
-    if ('assign' in req.passcode) return this.assignPasscode
-    if ('revoke' in req.passcode) return this.revokePasscode
-    if ('verify' in req.passcode) return this.verifyPasscode
+    if ('assign' in req.passcode) return this.assign
+    if ('revoke' in req.passcode) return this.revoke
+    if ('verify' in req.passcode) return this.verify
 
     return null
   }

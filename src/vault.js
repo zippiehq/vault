@@ -221,8 +221,7 @@ export default class Vault {
 
     if (this.mode === 'enclave') {
       // Webkit ITP 2.0 Support
-      //XXX: Not happy about this being here.
-      //     Move to plugin
+      //XXX: Not happy about this being here. Move to plugin
       if (document.hasStorageAccess !== undefined) {
         console.info('VAULT: ITP-2.0: browser support detected, checking storage status.')
         return document.hasStorageAccess()
