@@ -20,6 +20,8 @@
  * SOFTWARE.
  *
  */
+import VERSION from '../version.js'
+
 import FMS from './apis/fms.js'
 import Permastore from './apis/permastore.js'
 
@@ -641,6 +643,19 @@ export default class Vault {
     return await this.permastore.store(registryauth.privateKey, cipher)    
   }
 
+  /**
+   * Return vault version information.
+   */
+  async getVersion (req) {
+    return VERSION
+  }
+
+  /**
+   * Return vault configuration information
+   */
+  async getConfig (req) {
+    return this.config
+  }
 
   /**
    * Signin application to Zippie Vault
@@ -701,6 +716,9 @@ export default class Vault {
       if ('newidentity' in req) return this.newidentity
       if ('revoke' in req) return this.revoke
     }
+
+    if ('version' in req) return this.getVersion
+    if ('config' in  req) return this.getConfig
 
     if ('signin' in req) return this.signin
     if ('enrollments' in req) return this.enrollments

@@ -21,7 +21,6 @@
  *
  */
 import Vault from './vault.js'
-import VERSION from '../version.js'
 
 /**
  * Detect Runtime Exection Mode

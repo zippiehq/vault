@@ -122,5 +122,8 @@ export default class {
       this.vault.launch(this.vault.config.apps.root.signup + '/#/enroll/' + this.vault.params.enroll, { root: true })
       return
     }
+
+    alert('VAULT: ' + JSON.stringify(await this.vault.version()))
+    return
   }
 }
