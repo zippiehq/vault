@@ -87,7 +87,7 @@ export default class {
 
       // Build card recovery data
       console.info('VAULT: Generate card recovery data.')
-      let secret = shajs('sha256').update('000000').digest()
+      let secret = shajs('sha256').update(params.passcode).digest()
       let maxtries = new Buffer(2)
       maxtries.writeUInt16BE(3)
 
