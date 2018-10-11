@@ -41,6 +41,9 @@ if (window.location.host.indexOf('localhost') !== -1) {
 var config = require('../zippie.config.js')[runtime_mode]
 console.info('VAULT: Runtime Mode:', runtime_mode)
 
+// Store vault URI in config, so applications can request it.
+config.uri = window.location.origin
+
 /**
  * Vault Entry-Point
  */
