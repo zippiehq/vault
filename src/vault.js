@@ -684,27 +684,33 @@ export default class Vault {
       // Decrypt data
       result = await eccrypto.decrypt(registryauth.privateKey, result)
       result = JSON.parse(result.toString('utf8'))
-
-      // Filter enrollments output.
-      let localkey = Buffer.from(this.store.getItem('localkey'), 'hex')
-      let localpub = secp256k1.publicKeyCreate(localkey, false).toString('hex')
-
-      let filtered = []
-      for (let i = 0; i < result.length; i++) {
-        let item = result[i]
-
-        if (item.deviceKey === localpub) {
-          item.name = 'local'
-        }
-
-        filtered.push(item)
-      }
     } catch (e) {
       console.error('VAULT: Failed to process permastore response:', e)
       return []
     }
 
     return result
+  }
+
+  async enrollmentsReq () {
+    let result = await this.enrollments ()
+
+    // Filter enrollments output.
+    let localkey = Buffer.from(this.store.getItem('localkey'), 'hex')
+    let localpub = secp256k1.publicKeyCreate(localkey, false).toString('hex')
+
+    let filtered = []
+    for (let i = 0; i < result.length; i++) {
+      let item = result[i]
+
+      if (item.deviceKey === localpub) {
+        item.name = 'local'
+      }
+
+      filtered.push(item)
+    }
+
+    return filtered
   }
 
   /**
@@ -721,7 +727,7 @@ export default class Vault {
     if ('config' in  req) return this.getConfig
 
     if ('signin' in req) return this.signin
-    if ('enrollments' in req) return this.enrollments
+    if ('enrollments' in req) return this.enrollmentsReq
   }
 
   /**
