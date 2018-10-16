@@ -123,7 +123,7 @@ export default class {
       return
     }
 
-    alert('VAULT: ' + JSON.stringify(await this.vault.version()))
+    alert('VAULT: ' + JSON.stringify(await this.vault.getVersion()))
     return
   }
 }
