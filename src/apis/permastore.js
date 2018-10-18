@@ -56,8 +56,8 @@ export default class Permastore {
 
     let res = await (new XMLHttpRequestPromise()).send(req)
     if (res.status !== 200) {
-      console.error('VAULT: FMS Failed store for request:', req)
-      console.error('VAULT: FMS Failed store response:', res)
+      console.error('VAULT: Permastore Failed store for request:', req)
+      console.error('VAULT: Permastore Failed store response:', res)
       return false
     }
 
@@ -65,12 +65,12 @@ export default class Permastore {
     try {
       result = JSON.parse(res.responseText)
     } catch (e) {
-      console.error('VAULT: Error parsing FMS response:', e)
+      console.error('VAULT: Error parsing Permastore response:', e)
       return false
     }
 
     if ('error' in  result) {
-      console.error('VAULT: FMS returned error:', result)
+      console.error('VAULT: Permastore returned error:', result)
       return false
     }
 
@@ -96,8 +96,8 @@ export default class Permastore {
 
     // Check FMS response
     if (res.status !== 200) {
-      console.error('VAULT: FMS Failed query for request:', req)
-      console.error('VAULT: FMS Failed query response:', res)
+      console.error('VAULT: Permastore Failed query for request:', req)
+      console.error('VAULT: Permastore Failed query response:', res)
       return null
     }
 
@@ -106,12 +106,12 @@ export default class Permastore {
     try {
       result = JSON.parse(res.responseText)
     } catch (e) {
-      console.error('VAULT: Error parsing FMS response:', e)
+      console.error('VAULT: Error parsing Permastore response:', e)
       return null
     }
 
     if ('error' in result) {
-      console.warn('VAULT: FMS returned error:', result)
+      console.warn('VAULT: Permastore returned error:', result)
       return null
     }
 
