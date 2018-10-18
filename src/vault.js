@@ -684,12 +684,13 @@ export default class Vault {
       // Decrypt data
       result = await eccrypto.decrypt(registryauth.privateKey, result)
       result = JSON.parse(result.toString('utf8'))
+      return result
     } catch (e) {
       console.error('VAULT: Failed to process permastore response:', e)
       return []
     }
 
-    return result
+    return []
   }
 
   async enrollmentsReq () {
