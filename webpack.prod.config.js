@@ -24,10 +24,12 @@ module.exports = {
     ],
   },
 
+  /*
   optimization: {
     minimize: true,
     minimizer: [new UglifyJsPlugin()]
   },
+  */
 
   output: {
     filename: '[name]-bundle.js',
