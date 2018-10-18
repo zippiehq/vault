@@ -697,7 +697,13 @@ export default class Vault {
     let result = await this.enrollments ()
 
     // Filter enrollments output.
-    let localkey = Buffer.from(this.store.getItem('localkey'), 'hex')
+    let localkey = this.store.getItem('localkey')
+
+    // Translate hex encoded key to Buffer instance.
+    //XXX: Fix in identity migration code.
+    if (localkey[0] === '"') localkey = JSON.parse(localkey)
+    localkey = Buffer.from(localkey, 'hex')
+
     let localpub = secp256k1.publicKeyCreate(localkey, false).toString('hex')
 
     let filtered = []
