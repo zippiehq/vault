@@ -1,5 +1,5 @@
 # Zippie Vault
-Zippie Vault is a web browser based key chain using Service Workers allowing the creattion of application specific asymmetric cryptograhic keys based upon a master seed.
+Zippie Vault is a web browser based key chain using Service Workers allowing the creation of application specific asymmetric cryptographic keys based upon a master seed.
 
 ## Application Specific Keys
 Zippie Vault's main purpose is to create application specific derived asymmetric keys useful for signing and encrypting arbitrary data.
