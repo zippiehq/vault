@@ -24,21 +24,54 @@ export default class IPCRouter {
 
   constructor()
   {
-    this._receivers = {}
   }
 
   install (vault) {
     this.vault = vault
     vault.addReceiver(this)
+
+    vault._ipc_callback_counter = 0
+    vault._ipc_iframes = {}
+    vault._ipc_callbacks = {}
   }
 
   async handleMessage(req)
   {
-    console.info("[IPCRouter]: Received Router Request")
     var params = req.IPCRouterRequest
-    var receiver = this._receivers[params.target]
+    var receiver = this._ipc_iframes[params.target]
 
-    if(receiver === undefined && params.payload.call == 'init')
+    if(receiver !== undefined)
+    {
+      var response = await new Promise(function(resolve, reject) {
+        let id = 'callback-' + this._ipc_callback_counter++
+        params.payload.callback = id
+
+        this._ipc_callbacks[id] = [resolve, reject]
+
+        receiver.contentWindow.postMessage(params.payload, "*")
+      }.bind(this))
+
+      return response
+    }
+  }
+
+  async handleCallback(req)
+  {
+    console.info('callback', req)
+    if(req.IPCRouterRequest.callback !== undefined)
+    {
+      var call = this._ipc_callbacks[req.IPCRouterRequest.callback]
+      delete this._ipc_callbacks[req.IPCRouterRequest.callback]
+
+      return call[0](req.IPCRouterRequest.result);
+    }
+  }
+
+  async InitIframe(req)
+  {
+    var params = req.IPCRouterRequest
+
+    if(this._ipc_iframes[params.target] === undefined)
     {
       console.info("[IPCRouter]: Creating iframe for " + params.target)
       var iframe = document.createElement('iframe')
@@ -51,26 +84,33 @@ export default class IPCRouter {
       iframe.src = params.target;
       document.body.appendChild(iframe)
   
-      this._receivers[params.target] = iframe
-      receiver = iframe
+      this._ipc_iframes[params.target] = iframe
+
+      await new Promise(function(resolve, reject) {
+        let id = 'init-'+params.target
+        this._ipc_callbacks[id] = [resolve, reject]
+      }.bind(this))
     }
 
-    if(params.message == "ready")
-    {
-      console.info('[IPCRouter]: Iframe Ready!')
-      receiver.contentWindow.postMessage({'payload': { 'call': 'getPassportInfo', 'args': ''}}, "*")
-    }
-
-    receiver.contentWindow.postMessage(params.payload, "*")
-
-    return 
+    return
   }
 
   dispatchTo (node, req) {
 
     if('IPCRouterRequest' in req)
     {
-      return this.handleMessage
+      if(req.IPCRouterRequest.payload === undefined)
+      {
+        return this.handleCallback
+      }
+      else if(req.IPCRouterRequest.payload.call === 'init')
+      {
+        return this.InitIframe
+      }
+      else
+      {
+        return this.handleMessage
+      }
     }
 
     return null;
