@@ -20,6 +20,7 @@
  * SOFTWARE.
  *
  */
+import eccrypto from 'eccrypto'
 
 /**
  * Vault "Root" Mode Plugin
@@ -121,6 +122,34 @@ export default class {
     if ('enroll' in this.vault.params) {
       this.vault.launch(this.vault.config.apps.root.signup + '/#/enroll/' + this.vault.params.enroll, { root: true })
       return
+    }
+
+    // https://vault.zippie.org/#?import=v
+    if ('import' in this.vault.params) {
+      if (await this.vault.isSetup() &&
+          !confirm('Do you really want to import identity?')) {
+        return
+      }
+
+      // USE OTP TO GET MASTERSEED FROM FMS
+      let key = Buffer.from(this.vault.params['import'], 'hex')
+      let cipher = await this.vault.fms.fetch(key)
+      if (!cipher) {
+        console.error('VAULT: Failed to retreive OTP masterseed from FMS.')
+        return
+      }
+
+      // REVOKE OTP
+      await this.vault.fms.revoke(key)
+
+      // Translate hex encoded values to Buffer instances.
+      Object.keys(cipher).map(k => { cipher[k] = Buffer.from(cipher[k], 'hex') })
+
+      // Decrypt masterseed OTP
+      let masterseed = await eccrypto.decrypt(key, cipher)
+
+      // Initialise Vault with new Masterseed
+      return await this.vault.initidentity(masterseed)
     }
 
     alert('VAULT: ' + JSON.stringify(await this.vault.getVersion()))

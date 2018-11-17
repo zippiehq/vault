@@ -516,9 +516,17 @@ export default class Vault {
    */
   // TODO: Move to devices plugin.
   async newidentity (req) {
-    console.info('VAULT: Generating identity keys.')
-    let masterseed = Crypto.randomBytes(32)
+    console.info('VAULT: Creating new identity.')
+    return await this.initidentity(Crypto.randomBytes(32))
+  }
+  
+  /**
+   * Creates vault identity data using provided masterseed.
+   */
+  async initidentity (masterseed) {
+    console.info('VAULT: Initializing local device.')
 
+    console.info('VAULT: Generating identity keys.')
     // Generate device local key
     let localkey = Crypto.randomBytes(32)
     let localpub = secp256k1.publicKeyCreate(localkey, false)
