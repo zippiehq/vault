@@ -98,7 +98,8 @@ export default class {
           secret,
           maxtries,
           masterseed
-        ])
+        ]),
+        { aes128cbc: true }
       )
 
       // Convert buffers to hex.
