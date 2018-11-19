@@ -20,7 +20,8 @@
  * SOFTWARE.
  *
  */
-import eccrypto from 'eccrypto'
+import crypto from 'crypto'
+import secp256k1 from 'secp256k1'
 
 /**
  * Vault "Root" Mode Plugin
@@ -133,23 +134,49 @@ export default class {
 
       // USE OTP TO GET MASTERSEED FROM FMS
       let key = Buffer.from(this.vault.params['import'], 'hex')
-      let cipher = await this.vault.fms.fetch(key)
-      if (!cipher) {
+      let ciphertext = await this.vault.fms.fetch(key)
+      if (!ciphertext) {
         console.error('VAULT: Failed to retreive OTP masterseed from FMS.')
         return
       }
 
+      ciphertext = Buffer.from(ciphertext, 'hex')
+
+      let promise = new Promise(function (resolve, reject) {
+        const aeskey = key.slice(0,16)
+        const aesiv  = key.slice(16,32)
+        const cipher = crypto.createDecipheriv('aes-128-cbc', aeskey, aesiv)
+
+        let text = ''
+        cipher.on('readable', _ => {
+          const data = cipher.read()
+          if (data) text += data.toString('ascii')
+        })
+
+        cipher.on('end', _ => {
+          resolve(text)
+        })
+
+        cipher.write(ciphertext)
+        cipher.end()
+      })
+
       // REVOKE OTP
-      await this.vault.fms.revoke(key)
+      let authpub = secp256k1.publicKeyCreate(key, false)
+      let revokekey = secp256k1.ecdh(authpub, key)
+      let revokepub = secp256k1.publicKeyCreate(revokekey, false)
 
-      // Translate hex encoded values to Buffer instances.
-      Object.keys(cipher).map(k => { cipher[k] = Buffer.from(cipher[k], 'hex') })
-
-      // Decrypt masterseed OTP
-      let masterseed = await eccrypto.decrypt(key, cipher)
-
-      // Initialise Vault with new Masterseed
-      return await this.vault.initidentity(masterseed)
+      return promise
+        .then(function (masterseed) {
+          console.log(masterseed)
+          return this.vault.initidentity(Buffer.from(masterseed, 'hex'))
+        }.bind(this))
+        .then(function () {
+            return this.vault.fms.revoke(revokekey)
+        }.bind(this))
+        .then(function () {
+          this.vault.launch(this.vault.config.apps.user.home)
+        }.bind(this))
     }
 
     alert('VAULT: ' + JSON.stringify(await this.vault.getVersion()))
