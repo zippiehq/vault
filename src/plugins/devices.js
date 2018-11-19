@@ -87,16 +87,19 @@ export default class {
 
       // Build card recovery data
       console.info('VAULT: Generate card recovery data.')
+
+      // NOTE: Because our smart card expects a 32byte "plain" passphrase, we
+      //   double digest, the first digest is considered plain passphrase. The
+      //   second digest is the hash of generated passphrase.
       let secret = shajs('sha256').update(params.passcode).digest()
-      let maxtries = new Buffer(2)
-      maxtries.writeUInt16BE(3)
+      secret = shajs('sha256').update(secret).digest()
 
       console.info('VAULT: Encrypting card recovery data.')
       let recovery = await eccrypto.encrypt(
         recoverypub,
         Buffer.concat([
           secret,
-          maxtries,
+          Buffer.from('00'.repeat(14) + '0003', 'hex'),
           masterseed
         ]),
         { aes128cbc: true }
