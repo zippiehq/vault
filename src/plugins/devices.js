@@ -99,7 +99,7 @@ export default class {
         recoverypub,
         Buffer.concat([
           secret,
-          Buffer.from('00'.repeat(14) + '0003', 'hex'),
+          Buffer.from('00'.repeat(14) + '0005', 'hex'),
           masterseed
         ]),
         { aes128cbc: true }

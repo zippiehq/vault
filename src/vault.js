@@ -620,10 +620,10 @@ export default class Vault {
     let params = req.revoke
 
     // Derive revoke credentials for FMS device data.
-    let revokehash = shajs('sha256').update('devices/' + req.deviceKey).digest()
-    let revokeauth = await this.derive(revokehash)
+    let revokehash = shajs('sha256').update('devices/' + params.deviceKey).digest()
+    let revokeauth = await (await this.derive(revokehash)).derive("m/0")
 
-    let result = await this.fms.revoke(revokeauth.privateKey)
+    await this.fms.revoke(revokeauth.privateKey)
 
     // Derive access credentials for permastore device registry.
     let registryhash = shajs('sha256').update('devices').digest()
