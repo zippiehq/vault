@@ -368,7 +368,10 @@ export default class Vault {
 
     // Retrieve encrypted remote slice from FMS
     let rcipher = await this.fms.fetch(authkey)
-    if  (!rcipher) return null
+    if (!rcipher) {
+      console.error('VAULT: Failed to retrieve remote slice')
+      return null
+    }
 
     // Retrieve localkey from store for decrypting remote slice from FMS
     let localkey = this.store.getItem('localkey')
