@@ -543,7 +543,7 @@ export default class Vault {
       .update('devices/' + localpub.toString('hex'))
       .digest()
 
-    let revokekey = await this.derive(revokehash, masterseed)
+    let revokekey = await (await this.derive(revokehash, masterseed)).derive("m/0")
     let revokepub = secp256k1.publicKeyConvert(
       revokekey.publicKey,
       false
