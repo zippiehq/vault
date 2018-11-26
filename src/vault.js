@@ -739,7 +739,6 @@ export default class Vault {
     if (mode === 'root') { // ROOT-MODE ONLY RECEIVERS
       if ('launch' in req) return (function (req) { this.launch(req.launch.url, req.launch.opts) })
       if ('newidentity' in req) return this.newidentity
-      if ('revoke' in req) return this.revoke
     }
 
     if ('version' in req) return this.getVersion
@@ -747,6 +746,9 @@ export default class Vault {
 
     if ('signin' in req) return this.signin
     if ('enrollments' in req) return this.enrollmentsReq
+
+    // FIXME FIXME FIXME
+    if ('revoke' in req) return this.revoke
   }
 
   /**
