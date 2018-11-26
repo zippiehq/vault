@@ -370,6 +370,8 @@ export default class Vault {
     let rcipher = await this.fms.fetch(authkey)
     if (!rcipher) {
       console.error('VAULT: Failed to retrieve remote slice')
+      // XXX: Need a better way of invalidating after revokation.
+      this.store.clear()
       return null
     }
 
@@ -722,6 +724,7 @@ export default class Vault {
     for (let i = 0; i < result.length; i++) {
       let item = result[i]
 
+      // XXX: Replace with .local flag
       if (item.deviceKey === localpub) {
         item.name = 'local'
       }

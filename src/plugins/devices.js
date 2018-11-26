@@ -160,7 +160,7 @@ export default class {
     let devpub = Buffer.from(params.devicepubkey, 'hex')
     let devauthpub = Buffer.from(params.authpubkey, 'hex')
 
-    let devhash = shajs('sha256').update('devices/' + devpub).digest()
+    let devhash = shajs('sha256').update('devices/' + devpub.toString('hex')).digest()
 
     return await this.withMasterSeed(async function (masterseed) {
       // Generate device revokation key
