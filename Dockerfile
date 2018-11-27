@@ -3,7 +3,6 @@ FROM node
 WORKDIR /app
 
 # Add sources
-ADD dist /app/dist
 ADD package.json /app/package.json
 ADD webpack.prod.config.js /app/webpack.prod.config.js
 ADD zippie.config.js /app/zippie.config.js
