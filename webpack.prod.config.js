@@ -10,7 +10,7 @@ module.exports = {
       boot: ['@babel/polyfill', path.resolve(__dirname, 'src') + '/boot.js']
   },
 
-  devtool: 'inline-source-map',
+  devtool: 'source-map',
 
   module: {
     rules: [
@@ -25,12 +25,10 @@ module.exports = {
     ],
   },
 
-  /*
   optimization: {
     minimize: true,
-    minimizer: [new UglifyJsPlugin()]
+    minimizer: [new UglifyJsPlugin({sourceMap: true})]
   },
-  */
 
 plugins: [
 	new HtmlWebpackPlugin({
