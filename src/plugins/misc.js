@@ -20,6 +20,8 @@
  * SOFTWARE.
  *
  */
+import shajs from 'sha.js'
+import secp256k1 from 'secp256k1'
 
 /**
  * Vault Miscellaneous Actions Provider Plugin
@@ -51,6 +53,15 @@ export default class {
   }
 
   /**
+   *
+   */
+  async referral (req) {
+    let hash = shajs('sha256').update('refs').digest()
+    let pubex = await (await this.vault.derive(hash)).derive('m/0').publicExtendedKey
+    return {name: this.vault.store.getItem('user.name'), key: pubex.toString('hex')}
+  }
+
+  /**
    * MessageDispatcher Interface
    */
   dispatchTo (mode, req) {
@@ -58,6 +69,8 @@ export default class {
       if ('open' in req) return this.open
       else if ('qrscan' in req) return this.qrscan
     }
+
+    if ('referral' in req) return this.referral.bind(this)
 
     return null
   }
