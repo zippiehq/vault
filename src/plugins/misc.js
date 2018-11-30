@@ -21,7 +21,9 @@
  *
  */
 import shajs from 'sha.js'
+import HDKey from 'hdkey'
 import secp256k1 from 'secp256k1'
+import eccrypto from 'eccrypto'
 
 /**
  * Vault Miscellaneous Actions Provider Plugin
@@ -65,7 +67,18 @@ export default class {
    *
    */
   async postTo (req) {
-    return await this.vault.mailbox.store(req.postTo.key, req.postTo.data)
+    const params = req.postTo
+
+    let pubex = await HDKey.fromExtendedKey(params.key).derive('m/1')
+    let pubkey = secp256k1.publicKeyConvert(pubex.publicKey, false)
+
+    let cipher = await eccrypto.encrypt(pubkey, Buffer.from(JSON.stringify(params.data), 'utf8'))
+    Object.keys(cipher).map(k => { cipher[k] = cipher[k].toString('hex') })
+
+    return await this.vault.mailbox.store(
+      pubkey.toString('hex'),
+      cipher
+    )
   }
 
   /**
