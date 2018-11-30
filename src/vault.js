@@ -530,6 +530,8 @@ export default class Vault {
    * Creates vault identity data using provided masterseed.
    */
   async initidentity (masterseed, params) {
+    params = params || {}
+
     console.info('VAULT: Initializing local device.')
 
     console.info('VAULT: Generating identity keys.')
