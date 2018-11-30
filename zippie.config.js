@@ -2,7 +2,8 @@ module.exports = {
   development: {
     apis: {
       fms: 'https://fms.zippie.org',
-      permastore: 'https://fms.zippie.org'
+      permastore: 'https://fms.zippie.org',
+      mailbox: 'https://fms.zippie.org'
     },
     apps: {
       root: {
@@ -19,7 +20,8 @@ module.exports = {
   testing: {
     apis: {
       fms: 'https://fms.zippie.org',
-      permastore: 'https://fms.zippie.org'
+      permastore: 'https://fms.zippie.org',
+      mailbox: 'https://fms.zippie.org'
     },
     apps: {
       root: {
@@ -36,7 +38,8 @@ module.exports = {
   release: {
     apis: {
       fms: 'https://fms.zippie.org',
-      permastore: 'https://fms.zippie.org'
+      permastore: 'https://fms.zippie.org',
+      mailbox: 'https://fms.zippie.org'
     },
     apps: {
       root: {

@@ -24,6 +24,7 @@ import VERSION from '../version.js'
 
 import FMS from './apis/fms.js'
 import Permastore from './apis/permastore.js'
+import Mailbox from './apis/mailbox.js'
 
 import shajs from 'sha.js'
 import Crypto from 'crypto'
@@ -173,6 +174,7 @@ export default class Vault {
     // Setup remote service APIs
     this.fms = new FMS(this.config.apis.fms)
     this.permastore = new Permastore(this.config.apis.permastore)
+    this.mailbox = new Mailbox(this.config.apis.mailbox)
 
     // Start listening for incoming message events
     self.addEventListener('message', this.dispatch.bind(this))

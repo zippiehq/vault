@@ -62,15 +62,23 @@ export default class {
   }
 
   /**
+   *
+   */
+  async postTo (req) {
+    return await this.vault.mailbox.store(req.postTo.key, req.postTo.data)
+  }
+
+  /**
    * MessageDispatcher Interface
    */
   dispatchTo (mode, req) {
     if (mode === 'root') { // ROOT-MODE ONLY RECEIVERS
       if ('open' in req) return this.open
-      else if ('qrscan' in req) return this.qrscan
+      if ('qrscan' in req) return this.qrscan
     }
 
     if ('referral' in req) return this.referral.bind(this)
+    if ('postTo' in req) return this.postTo.bind(this)
 
     return null
   }
