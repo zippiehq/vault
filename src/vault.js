@@ -523,13 +523,13 @@ export default class Vault {
   // TODO: Move to devices plugin.
   async newidentity (req) {
     console.info('VAULT: Creating new identity.')
-    return await this.initidentity(Crypto.randomBytes(32))
+    return await this.initidentity(Crypto.randomBytes(32), req.newidentity.opts)
   }
   
   /**
    * Creates vault identity data using provided masterseed.
    */
-  async initidentity (masterseed) {
+  async initidentity (masterseed, params) {
     console.info('VAULT: Initializing local device.')
 
     console.info('VAULT: Generating identity keys.')
@@ -578,6 +578,16 @@ export default class Vault {
 
     console.info('VAULT: Creating enrollment registry')
     await this.enroll('device', localpub.toString('hex').slice(-8), localpub.toString('hex'))
+
+    if (params['signup.user.name']) {
+      this.store.setItem('user.name', params['signup.user.name'])
+      await this.userdata.set({key: 'user.name', value: params['signup.user.name']})
+    }
+
+    if (params['signup.user.email']) {
+      this.store.setItem('user.email', params['signup.user.email'])
+      await this.userdata.set({key: 'user.email', value: params['signup.user.email']})
+    }
 
     console.info('VAULT: New identity created successfully!')
     this._isSetup = true
