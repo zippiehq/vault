@@ -581,14 +581,14 @@ export default class Vault {
     console.info('VAULT: Creating enrollment registry')
     await this.enroll('device', localpub.toString('hex').slice(-8), localpub.toString('hex'))
 
-    if (params['signup.user.name']) {
-      this.store.setItem('user.name', params['signup.user.name'])
-      await this.userdata.set({key: 'user.name', value: params['signup.user.name']})
+    if (params['signup_user_name']) {
+      this.store.setItem('user.name', params['signup_user_name'])
+      await this.userdata.set({key: 'user.name', value: params['signup_user_name']})
     }
 
-    if (params['signup.user.email']) {
-      this.store.setItem('user.email', params['signup.user.email'])
-      await this.userdata.set({key: 'user.email', value: params['signup.user.email']})
+    if (params['signup_user_email']) {
+      this.store.setItem('user.email', params['signup_user_email'])
+      await this.userdata.set({key: 'user.email', value: params['signup_user_email']})
     }
 
     console.info('VAULT: New identity created successfully!')
