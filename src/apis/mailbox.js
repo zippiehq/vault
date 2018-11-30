@@ -39,7 +39,7 @@ export default class Mailbox {
       },
       data: JSON.stringify({
         recipient: address,
-        data: data
+        data: Buffer.from(JSON.stringify(data), 'utf8').toString('hex')
       })
     }
 
