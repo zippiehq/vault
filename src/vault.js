@@ -525,7 +525,7 @@ export default class Vault {
   // TODO: Move to devices plugin.
   async newidentity (req) {
     console.info('VAULT: Creating new identity.')
-    return await this.initidentity(Crypto.randomBytes(32), req.newidentity.opts)
+    return await this.initidentity(Crypto.randomBytes(32), req.newidentity)
   }
   
   /**
