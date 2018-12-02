@@ -84,7 +84,8 @@ export default class {
           if (k.startsWith('signup')) params[k] = this.vault.params[k]
         })
 
-        this.vault.launch(this.vault.config.apps.root.signup, { root: true, params: params })
+        this.vault.launch(this.vault.config.apps.root.signup +
+            (params['signup_eula'] ? '/#/eula' : ''), { root: true, params: params })
           .then(function () {
             this.vault.launch(this.vault.params.launch)
           }.bind(this))
