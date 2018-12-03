@@ -123,7 +123,7 @@ export default class {
 
     console.info('VAULT: Populating vault injection data.')
     let keys = [
-      'localkey', 'authkey', 'localslice_e'
+      'localkey', 'authkey', 'localslice_e', 'user.name', 'user.email'
     ]
 
     data = {}
