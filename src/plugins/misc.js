@@ -59,7 +59,7 @@ export default class {
    */
   async referral (req) {
     let hash = shajs('sha256').update('refs').digest()
-    let pubex = await (await this.vault.derive(hash)).derive('m/0').publicExtendedKey
+    let pubex = await (await this.vault.derive(hash)).derive("m/0'/0").publicExtendedKey
     return {name: this.vault.store.getItem('user.name'), key: pubex.toString('hex')}
   }
 
