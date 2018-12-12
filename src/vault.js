@@ -593,6 +593,11 @@ export default class Vault {
       await this.userdata.set({key: 'user.email', value: params['email']})
     }
 
+    if (params['lang']) {
+      this.store.setItem('user.lang', params['lang'])
+      await this.userdata.set({key: 'user.lang', vault: params['lang']})
+    }
+
     console.info('VAULT: New identity created successfully!')
     this._isSetup = true
     return this._isSetup
