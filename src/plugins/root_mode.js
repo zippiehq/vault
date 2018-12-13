@@ -96,6 +96,22 @@ export default class {
       return
     }
 
+    // https://vault.zippie.org#?recover=v
+    if ('recover' in this.vault.params) {
+      if (await this.vault.isSetup() && !confirm('Do you really want to import identity?')) {
+        return
+      }
+
+      let recovery = await this.vault.fms.fetch(Buffer.from(this.vault.params.recover, 'hex'))
+
+      this.vault.launch(this.vault.config.apps.root.signup + '/#/recover/auth', { root: true, params: { recovery: Buffer.from(JSON.stringify(recovery), 'ascii').toString('hex') }})
+        .then(function () {
+          this.vault.launch(this.vault.params.launch)
+        }.bind(this))
+
+      return
+    }
+
     // https://vault.zippie.org/#?card=v
     if ('card' in this.vault.params) {
       // Check to see if user is signed up, if not, do signup process, card enrollment
