@@ -77,7 +77,6 @@ export default class {
     if ('launch' in this.vault.params) {
       // Check to see if user is signed up, if not, do signup process.
       if (!await this.vault.isSetup()) {
-
         // Process signup parameters.
         let params = { }
         Object.keys(this.vault.params).forEach(k => {
@@ -105,7 +104,13 @@ export default class {
       let recovery = await this.vault.fms.fetch(Buffer.from(this.vault.params.recover, 'hex'))
       recovery = Buffer.from(JSON.stringify(recovery), 'ascii').toString('hex')
 
-      this.vault.launch(this.vault.config.apps.root.signup + '/#/recover/auth/' + recovery, { root: true })
+      // Process signup parameters.
+      let params = { }
+      Object.keys(this.vault.params).forEach(k => {
+        if (k.startsWith('signup')) params[k] = this.vault.params[k]
+      })
+
+      this.vault.launch(this.vault.config.apps.root.signup + '/#/recover/auth/' + recovery, { root: true, params: params })
         .then(function () {
           this.vault.launch(this.vault.params.launch)
         }.bind(this))
