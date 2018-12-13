@@ -133,6 +133,7 @@ export default class Vault {
       new (require('./plugins/devices.js')).default(),
       new (require('./plugins/userdata.js')).default(),
       new (require('./plugins/passcode.js')).default(),
+      new (require('./plugins/recovery.js')).default(),
       new (require('./plugins/misc.js')).default(),
       new (require('./plugins/ipc_router.js')).default(),
     ])
