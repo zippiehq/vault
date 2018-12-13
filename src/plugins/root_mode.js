@@ -103,8 +103,9 @@ export default class {
       }
 
       let recovery = await this.vault.fms.fetch(Buffer.from(this.vault.params.recover, 'hex'))
+      recovery = Buffer.from(JSON.stringify(recovery), 'ascii').toString('hex')
 
-      this.vault.launch(this.vault.config.apps.root.signup + '/#/recover/auth', { root: true, params: { recovery: Buffer.from(JSON.stringify(recovery), 'ascii').toString('hex') }})
+      this.vault.launch(this.vault.config.apps.root.signup + '/#/recover/auth/' + recovery, { root: true })
         .then(function () {
           this.vault.launch(this.vault.params.launch)
         }.bind(this))

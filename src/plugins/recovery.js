@@ -73,12 +73,38 @@ export default class {
   }
 
   /**
+   * Request:
+   *   recovery: {
+   *     restore: {
+   *       key: RECOVERY_DATA_ENCKEY,
+   *       recovery: RECOVERY_DATA_CIPHERTEXT
+   *     }
+   *   }
+   */
+  async restore (req) {
+    let params = req.recovery.restore
+
+    let enckey = Buffer.from(params.key, 'hex').slice(0, 32)
+    let cipher = params.recovery
+    Object.keys(cipher).map(k => { cipher[k] = Buffer.from(cipher[k], 'hex') })
+
+    let masterseed = await eccrypto.decrypt(enckey, cipher)
+    console.log(masterseed)
+
+    return this.initidentity(masterseed)
+      .then(function () {
+        return this.launch(this.config.apps.user.home)
+      }.bind(this))
+  }
+
+  /**
    * MessageDispatcher Interface
    */
   dispatchTo (mode, req) {
     if (mode !== 'root' || !('recovery' in req)) return
 
     if ('create' in req.recovery) return this.create
+    if ('restore' in req.recovery) return this.restore
 
     return null
   }
