@@ -137,9 +137,6 @@ export default class Vault {
       new (require('./plugins/misc.js')).default(),
       new (require('./plugins/ipc_router.js')).default(),
     ])
-
-    // Iterate vault plugins install phase.
-    this.plugin_exec('install', this)
   }
 
   /**
@@ -176,6 +173,9 @@ export default class Vault {
     this.fms = new FMS(this.config.apis.fms)
     this.permastore = new Permastore(this.config.apis.permastore)
     this.mailbox = new Mailbox(this.config.apis.mailbox)
+
+    // Iterate vault plugins install phase.
+    await this.plugin_exec('install', this)
 
     // Start listening for incoming message events
     self.addEventListener('message', this.dispatch.bind(this))
