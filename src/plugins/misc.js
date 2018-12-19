@@ -21,9 +21,11 @@
  *
  */
 import shajs from 'sha.js'
+import crypto from 'crypto'
 import HDKey from 'hdkey'
 import secp256k1 from 'secp256k1'
 import eccrypto from 'eccrypto'
+import XMLHttpRequestPromise from 'xhr-promise'
 
 /**
  * Vault Miscellaneous Actions Provider Plugin
@@ -60,7 +62,67 @@ export default class {
   async referral (req) {
     let hash = shajs('sha256').update('refs').digest()
     let pubex = await (await this.vault.derive(hash)).derive("m/0'/0").publicExtendedKey
-    return {name: this.vault.store.getItem('user.name'), key: pubex.toString('hex')}
+
+    let key = crypto.randomBytes(16)
+    let iv  = crypto.randomBytes(16)
+
+    let plaintext = Buffer.from(JSON.stringify({
+      name: this.vault.store.getItem('user.name'),
+      key: pubex.toString('hex')
+    }),'utf-8')
+
+    let promise = new Promise(function (resolve, reject) {
+      let cipher = crypto.createCipheriv('aes-128-cbc', key, iv)
+
+      let ciphertext = new Buffer(0)
+      cipher.on('readable', _ => {
+        let data = cipher.read()
+        if (data) ciphertext = Buffer.concat([ciphertext, data])
+      })
+
+      cipher.on('end', _ => {
+        resolve(ciphertext)
+      })
+
+      cipher.write(plaintext)
+      cipher.end()
+    })
+
+    return promise
+      .then(async function (r) {
+        let req = {
+          url: 'https://api.contribution.zipperglobal.com/submit/store_incremental',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json; charset=UTF-8'
+          },
+          data: JSON.stringify({data: r.toString('hex')})
+        }
+
+        let res = await (new XMLHttpRequestPromise()).send(req)
+
+        if (res.status !== 200) {
+          console.error('VAULT: Incremental store failed for request:', req)
+          console.error('VAULT: Incremental store failed response:', res)
+          return false
+        }
+
+        // Parse and process response data
+        let result
+        try {
+          result = JSON.parse(res.responseText)
+        } catch (e) {
+          console.error('VAULT: Error parsing FMS fetch response:', e)
+          return false
+        }
+
+        if (!('id' in result)) return false
+
+        return Promise.resolve({
+          id: result.id,
+          key: Buffer.concat([key, iv]).toString('hex')
+        })
+      })
   }
 
   /**
