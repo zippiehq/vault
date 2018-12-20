@@ -105,7 +105,11 @@ export default class {
         return
       }
 
-      let recovery = await this.vault.fms.fetch(Buffer.from(this.vault.params.recover, 'hex'))
+      let parts = this.vault.params.recover.split(':')
+      let salt = parts[0]
+      let authkey = Buffer.from(parts[1], 'hex')
+
+      let recovery = await this.vault.fms.fetch(authkey)
       recovery = Buffer.from(JSON.stringify(recovery), 'ascii').toString('hex')
 
       // Process signup parameters.
@@ -114,7 +118,7 @@ export default class {
         if (k.startsWith('signup')) params[k] = this.vault.params[k]
       })
 
-      this.vault.launch(this.vault.config.apps.root.signup + '/#/recover/auth/' + recovery, { root: true, params: params })
+      this.vault.launch(this.vault.config.apps.root.signup + '/#/recover/auth/' + salt + '/' + recovery, { root: true, params: params })
         .then(function () {
           this.vault.launch(this.vault.params.launch)
         }.bind(this))
