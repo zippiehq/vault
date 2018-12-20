@@ -10,6 +10,7 @@
   "author": "Zippie Ltd.",
   "license": "Commercial/AGPLv3",
   "dependencies": {
+    "bs58": "^4.0.1",
     "eccrypto": "github:zippiehq/eccrypto",
     "hdkey": "^0.8.0",
     "js-cookie": "^2.2.0",
