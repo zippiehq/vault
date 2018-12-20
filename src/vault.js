@@ -236,8 +236,11 @@ export default class Vault {
             r => {
               if (r === false) {
                 console.info('VAULT: ITP-2.0: Vault does not have storage access.')
-                parent.postMessage({login: null}, '*')
-                return Promise.resolve()
+
+                return document.requestStorage()
+                  .catch(e => {
+                    parent.postMessage({login: null}, '*')
+                  })
               }
 
               // Post vault ready.
