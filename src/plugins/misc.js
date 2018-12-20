@@ -26,6 +26,7 @@ import HDKey from 'hdkey'
 import secp256k1 from 'secp256k1'
 import eccrypto from 'eccrypto'
 import XMLHttpRequestPromise from 'xhr-promise'
+import bs58 from 'bs58'
 
 /**
  * Vault Miscellaneous Actions Provider Plugin
@@ -90,13 +91,14 @@ export default class {
 
     return promise
       .then(async function (r) {
+        r = r.toString('hex')
         let req = {
           url: 'https://api.contribution.zipperglobal.com/submit/store_incremental',
           method: 'POST',
           headers: {
             'Content-Type': 'application/json; charset=UTF-8'
           },
-          data: JSON.stringify({data: r.toString('hex')})
+          data: JSON.stringify({data: r})
         }
 
         let res = await (new XMLHttpRequestPromise()).send(req)
@@ -118,9 +120,11 @@ export default class {
 
         if (!('id' in result)) return false
 
+        let id = new Buffer(4)
+        id.writeUInt32BE(result.id, 0)
+
         return Promise.resolve({
-          id: result.id,
-          key: Buffer.concat([key, iv]).toString('hex')
+          key: bs58.encode(Buffer.concat([id, key, iv]))
         })
       })
   }
