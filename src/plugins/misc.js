@@ -124,7 +124,8 @@ export default class {
         id.writeUInt32BE(result.id, 0)
 
         return Promise.resolve({
-          key: bs58.encode(Buffer.concat([id, key, iv]))
+          key: bs58.encode(Buffer.concat([id, key, iv])),
+          pubex: pubex.toString('hex')
         })
       })
   }
