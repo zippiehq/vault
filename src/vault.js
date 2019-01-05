@@ -693,6 +693,13 @@ export default class Vault {
   }
 
   /**
+   *
+   */
+  async isSignedInReq (req) {
+    return await this.isSetup()
+  }
+
+  /**
    * Signin application to Zippie Vault
    */
   async signin (req) {
@@ -767,6 +774,8 @@ export default class Vault {
 
     if ('version' in req) return this.getVersion
     if ('config' in  req) return this.getConfig
+
+    if ('isSignedIn' in req) return this.isSignedInReq
 
     if ('signin' in req) return this.signin
     if ('enrollments' in req) return this.enrollmentsReq
