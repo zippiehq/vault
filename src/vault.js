@@ -703,7 +703,9 @@ export default class Vault {
    * Signin application to Zippie Vault
    */
   async signin (req) {
-    this.plugin_exec('signin', req.origin, this.params.magiccookie)
+    return new Promise(function (resolve, reject) {
+      this.plugin_exec('signin', req.origin, this.params.magiccookie, resolve, reject)
+    }.bind(this))
   }
 
   /**

@@ -58,9 +58,16 @@ export default class {
   /**
    * Configuration hook run in user mode.
    */
-  async signin (origin, magiccookie) {
+  async signin (origin, magiccookie, resolve, reject) {
     let parser = document.createElement('a')
     parser.href = origin
+
+    if (magiccookie === undefined) {
+      return resolve({
+        error: 'Vault magic cookie not supplied.',
+        launch: window.location.href.split('#')[0]
+      })
+    }
 
     let apphash = shajs('sha256').update(parser.host).digest().toString('hex')
 
@@ -72,10 +79,10 @@ export default class {
     if (data === undefined) {
       console.info('No v-data cookie discovered, user needs to sign-in.')
 
-      return {
-        launch: window.location.href.split('#')[0],
-        reason: 'Vault data cookie undefined.'
-      }
+      return resolve({
+        error: 'Vault data cookie undefined.',
+        launch: window.location.href.split('#')[0]
+      })
     }
 
     // Decode & Extract iv and ciphertext from HTTP vault cookie.
@@ -101,6 +108,8 @@ export default class {
       console.info('VAULT: injecting key value: ' + k)
       this.vault.store.setItem(k, vdata[k])
     }
+
+    return resolve()
   }
 
   /**
