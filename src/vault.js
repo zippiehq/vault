@@ -51,18 +51,22 @@ import secrets from 'secrets.js-grempe'
 //XXX: Not happy about this being here.
 //     Move to plugin
 function requestStorage () {
-  return document.requestStorageAccess()
-    .then(
-      function () {
-        console.log('ITP: Storage access granted!')
-        // Post vault ready.
-        console.log('Zippie Vault ready.')
-        parent.postMessage({ready: true}, '*')
-      },
-      function () {
-        console.error('ITP: Storage access denied!')
-        parent.postMessage({error: 'ITP 2.0 Storage Access Denied'}, '*')
-      })
+  return new Promise (function (resolve, reject) {
+    if (document.requestStorageAccess !== undefined) {
+      return document.requestStorageAccess()
+        .then(
+          function () {
+            console.log('ITP: Storage access granted!')
+            return resolve(true)
+          },
+          function () {
+            console.error('ITP: Storage access denied!')
+            return reject()
+          })
+    }
+
+    return resolve(true)
+  })
 }
 
 /**
@@ -816,7 +820,18 @@ export default class Vault {
     // ITP-2.0
     // Called by parent when the user presses the "Zippie Signin" button.
     //XXX: Not happy about this being here.
-    if ('login' in req) return requestStorage()
+    if ('login' in req) {
+      return requestStorage()
+        .then(function (r) {
+          event.source.postMessage({
+            callback: event.data.callback,
+            result: r
+          }, event.origin)
+        })
+        .catch(e => {
+          console.error('VAULT: ITP-2.0 REQUEST FAILURE.')
+        })
+    }
 
     // Find message receiver
     for (var i = 0; i < this._receivers.length; i++) {
