@@ -832,7 +832,7 @@ export default class Vault {
           console.error('VAULT: ITP-2.0 REQUEST FAILURE.')
           event.source.postMessage({
             callback: event.data.callback,
-            error: 'ITP_REQUEST_FAULURE'
+            error: 'ITP_REQUEST_FAILURE'
           }, event.origin)
         })
     }
