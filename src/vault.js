@@ -699,6 +699,13 @@ export default class Vault {
   /**
    *
    */
+  async reboot (req) {
+    window.location.reload()
+  }
+
+  /**
+   *
+   */
   async isSignedInReq (req) {
     return await this.isSetup()
   }
@@ -780,6 +787,8 @@ export default class Vault {
 
     if ('version' in req) return this.getVersion
     if ('config' in  req) return this.getConfig
+
+    if ('reboot' in req) return this.reboot
 
     if ('isSignedIn' in req) return this.isSignedInReq
 
