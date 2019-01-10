@@ -90,7 +90,9 @@ export default class {
 
         this.vault.launch(this.vault.config.apps.root.signup + path, { root: true, params: params })
           .then(function () {
-            this.vault.launch(this.vault.params.launch)
+            let opts
+            if (this.vault.params.itp) opts = { params: { itp: true } }
+            this.vault.launch(this.vault.params.launch, opts)
           }.bind(this))
         return
       }
