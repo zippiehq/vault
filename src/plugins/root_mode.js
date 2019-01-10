@@ -95,7 +95,13 @@ export default class {
             this.vault.launch(this.vault.params.launch, opts)
           }.bind(this))
         return
+
+      } else if (this.vault.params.itp &&
+          confirm('Allow "' + this.vault.params.launch + '" access to vault?')) {
+        let opts = { params: { itp: true } }
+        return this.vault.launch(this.vault.params.launch, opts)
       }
+
 
       this.vault.launch(this.vault.params.launch)
       return
