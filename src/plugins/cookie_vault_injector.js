@@ -158,6 +158,7 @@ export default class {
       'v-data-' + apphash.toString('hex'),
       Buffer.concat([iv, bs, be]).toString('hex'),
       {
+        expires: 30,
         secure: true
       }
     )

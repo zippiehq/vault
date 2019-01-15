@@ -102,7 +102,6 @@ export default class {
         return this.vault.launch(this.vault.params.launch, opts)
       }
 
-
       this.vault.launch(this.vault.params.launch)
       return
     }

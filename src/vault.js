@@ -245,7 +245,7 @@ export default class Vault {
               }
 
               // Post vault ready.
-              console.info('VAULT: ITP-2.0: Setup complete.')
+              console.info('VAULT: ITP-2.0: Vault has storage access.')
               parent.postMessage({ready: true}, '*')
               return Promise.resolve()
             },
