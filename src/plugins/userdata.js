@@ -45,6 +45,7 @@ export default class {
    *
    */
   async set (req) {
+    req = req.userdata.set
     const keyhash = shajs('sha256').update(req.key).digest()
     const masterkey = await this.vault.derive(keyhash)
 
@@ -70,6 +71,7 @@ export default class {
    *
    */
   async get (req) {
+    req = req.userdata.get
     const keyhash = shajs('sha256').update(req.key).digest()
     const masterkey = await this.vault.derive(keyhash)
 
