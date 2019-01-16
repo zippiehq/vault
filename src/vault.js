@@ -237,7 +237,7 @@ export default class Vault {
         console.info('VAULT: ITP-2.0: browser support detected, checking storage status.')
         return document.hasStorageAccess()
           .then(
-            r => {
+            async function (r) {
               if (r === false) {
                 console.info('VAULT: ITP-2.0: Vault does not have storage access.')
                 parent.postMessage({login: null}, '*')
@@ -246,9 +246,9 @@ export default class Vault {
 
               // Post vault ready.
               console.info('VAULT: ITP-2.0: Vault has storage access.')
-              parent.postMessage({ready: true}, '*')
+              parent.postMessage({ready: await this.isSetup()}, '*')
               return Promise.resolve()
-            },
+            }.bind(this),
             e => {
               console.error('VAULT: ITP-2.0: hasStorageAccess:', e)
               parent.postMessage({error: 'ITP-2.0'})
@@ -257,7 +257,7 @@ export default class Vault {
           )
       }
 
-      window.top.postMessage({ready: true}, '*')
+      window.top.postMessage({ready: await this.isSetup()}, '*')
     }
   }
 
