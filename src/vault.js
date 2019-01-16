@@ -590,17 +590,17 @@ export default class Vault {
 
     if (params['name']) {
       this.store.setItem('user.name', params['name'])
-      await this.userdata.set.bind(this)({key: 'user.name', value: params['name']})
+      await this.userdata.set.bind(this)({userdata: { set: {key: 'user.name', value: params['name']}}})
     }
 
     if (params['email']) {
       this.store.setItem('user.email', params['email'])
-      await this.userdata.set.bind(this)({key: 'user.email', value: params['email']})
+      await this.userdata.set.bind(this)({userdata: { set: {key: 'user.email', value: params['email']}}})
     }
 
     if (params['lang']) {
       this.store.setItem('user.lang', params['lang'])
-      await this.userdata.set.bind(this)({key: 'user.lang', vault: params['lang']})
+      await this.userdata.set.bind(this)({userdata: { set: {key: 'user.lang', value: params['lang']}}})
     }
 
     console.info('VAULT: New identity created successfully!')
