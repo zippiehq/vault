@@ -20,11 +20,13 @@
  * SOFTWARE.
 */
 
+/**
+ * IPCRouter creates sub iframes and forwards messages
+ * for the purpose of enabling secure communication between dapps
+ */
 export default class IPCRouter {
 
-  constructor()
-  {
-  }
+  constructor() { }
 
   install (vault) {
     this.vault = vault
@@ -35,16 +37,15 @@ export default class IPCRouter {
     vault._ipc_callbacks = {}
   }
 
-  async handleMessage(req)
-  {
+  async handleMessage(req) {
     var params = req.IPCRouterRequest
     var receiver = this._ipc_iframes[params.target]
 
-    if(receiver !== undefined)
-    {
+    if(receiver !== undefined) {
       var response = await new Promise(function(resolve, reject) {
         let id = 'callback-' + this._ipc_callback_counter++
         params.payload.callback = id
+        params.payload.origin = req.origin
 
         this._ipc_callbacks[id] = [resolve, reject]
 
@@ -55,8 +56,7 @@ export default class IPCRouter {
     }
   }
 
-  async handleCallback(req)
-  {
+  async handleCallback(req) {
     console.info('callback', req)
     if(req.IPCRouterRequest.callback !== undefined)
     {
@@ -67,12 +67,33 @@ export default class IPCRouter {
     }
   }
 
-  async InitIframe(req)
-  {
+  async InitIframe(req) {
     var params = req.IPCRouterRequest
 
-    if(this._ipc_iframes[params.target] === undefined)
-    {
+    if(this._ipc_iframes[params.target] === undefined) {
+
+      let isPermitted = true // FIXME
+
+      // Check local storage for whitelist
+      /* TODO: enable whitelist check
+      let whitelist = this.store.getItem('IPC-'+params.target)
+  
+
+      if(whitelist !== null) {
+        let list = JSON.parse(whitelist)
+  
+        if(req.origin in list) {
+          // then everything is ok
+          console.info('[IPCRouter]: whitelist check passed')
+          isPermitted = true
+        }
+      }
+      */
+
+      if(isPermitted === false) {
+        return this.launch( window.location.href.split('#')[0] +'#?pinauth=v', {callback: req.callback, root: true})
+      }
+
       console.info("[IPCRouter]: Creating iframe for " + params.target)
       var iframe = document.createElement('iframe')
       iframe.style.display = 'none'
@@ -95,20 +116,37 @@ export default class IPCRouter {
     return
   }
 
-  dispatchTo (node, req) {
+  async DappConnect(req) {
+    let from = req.from
+    let to = req.to
+    let whitelist = []
 
-    if('IPCRouterRequest' in req)
-    {
-      if(req.IPCRouterRequest.payload === undefined)
-      {
+    console.info('[DappConnect]: whitelist ' + from + ' -> ' + to)
+
+    // read existing whitelist for destination Dapp
+    let db = this.store.getItem('IPC'-to)
+    if(db !== null) {
+      whitelist = JSON.parse(db)
+    }
+
+    whitelist[from] = true
+    this.store.setItem('IPC-'+to, whitelist)
+    return
+  }
+
+  dispatchTo (mode, req) {
+    if(mode === 'root') {
+      // root mode receivers
+      if('DappConnectRequest' in req) {
+        return this.DappConnect
+      }
+    }
+    else if('IPCRouterRequest' in req) {
+      if(req.IPCRouterRequest.payload === undefined) {
         return this.handleCallback
-      }
-      else if(req.IPCRouterRequest.payload.call === 'init')
-      {
+      } else if(req.IPCRouterRequest.payload.call === 'init') {
         return this.InitIframe
-      }
-      else
-      {
+      } else {
         return this.handleMessage
       }
     }
