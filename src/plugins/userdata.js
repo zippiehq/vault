@@ -47,7 +47,7 @@ export default class {
   async set (req) {
     req = req.userdata.set
     const keyhash = shajs('sha256').update(req.key).digest()
-    const masterkey = await this.vault.derive(keyhash)
+    const masterkey = await this.derive(keyhash)
 
     const authkey = await masterkey.derive('m/0')
     const revokekey = await masterkey.derive('m/1')
@@ -64,7 +64,7 @@ export default class {
     Object.keys(cipher).map(k => { cipher[k] = cipher[k].toString('hex') })
 
     console.info('VAULT: Uploading user data (' + req.key + ') to FMS.')
-    return await this.vault.fms.store(authpub, revokepub, cipher)
+    return await this.fms.store(authpub, revokepub, cipher)
   }
 
   /**
@@ -73,12 +73,12 @@ export default class {
   async get (req) {
     req = req.userdata.get
     const keyhash = shajs('sha256').update(req.key).digest()
-    const masterkey = await this.vault.derive(keyhash)
+    const masterkey = await this.derive(keyhash)
 
     const authkey = await masterkey.derive('m/0')
     const authpub = secp256k1.publicKeyConvert(authkey.publicKey, false)
 
-    let cipher = await this.vault.fms.fetch(authkey.privateKey)
+    let cipher = await this.fms.fetch(authkey.privateKey)
     console.log(cipher)
     if (!cipher) {
       console.warn('VAULT: Failed to retrieve user data:', req.key)
@@ -98,10 +98,10 @@ export default class {
    */
   async clear (req) {
     const keyhash = shajs('sha256').update(req.key).digest()
-    const masterkey = await this.vault.derive(keyhash)
+    const masterkey = await this.derive(keyhash)
     const revokekey = await masterkey.derive('m/1')
 
-    return await this.vault.fms.revoke(revokekey.privateKey)
+    return await this.fms.revoke(revokekey.privateKey)
   }
 
   /**
