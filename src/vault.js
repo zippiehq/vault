@@ -237,7 +237,7 @@ export default class Vault {
         console.info('VAULT: ITP-2.0: browser support detected, checking storage status.')
         return document.hasStorageAccess()
           .then(
-            r => {
+            async function (r) {
               if (r === false) {
                 console.info('VAULT: ITP-2.0: Vault does not have storage access.')
                 parent.postMessage({login: null}, '*')
@@ -245,10 +245,10 @@ export default class Vault {
               }
 
               // Post vault ready.
-              console.info('VAULT: ITP-2.0: Setup complete.')
-              parent.postMessage({ready: true}, '*')
+              console.info('VAULT: ITP-2.0: Vault has storage access.')
+              parent.postMessage({ready: await this.isSetup()}, '*')
               return Promise.resolve()
-            },
+            }.bind(this),
             e => {
               console.error('VAULT: ITP-2.0: hasStorageAccess:', e)
               parent.postMessage({error: 'ITP-2.0'})
@@ -257,7 +257,7 @@ export default class Vault {
           )
       }
 
-      window.top.postMessage({ready: true}, '*')
+      window.top.postMessage({ready: await this.isSetup()}, '*')
     }
   }
 
@@ -590,17 +590,17 @@ export default class Vault {
 
     if (params['name']) {
       this.store.setItem('user.name', params['name'])
-      await this.userdata.set({key: 'user.name', value: params['name']})
+      await this.userdata.set.bind(this)({userdata: { set: {key: 'user.name', value: params['name']}}})
     }
 
     if (params['email']) {
       this.store.setItem('user.email', params['email'])
-      await this.userdata.set({key: 'user.email', value: params['email']})
+      await this.userdata.set.bind(this)({userdata: { set: {key: 'user.email', value: params['email']}}})
     }
 
     if (params['lang']) {
       this.store.setItem('user.lang', params['lang'])
-      await this.userdata.set({key: 'user.lang', vault: params['lang']})
+      await this.userdata.set.bind(this)({userdata: { set: {key: 'user.lang', value: params['lang']}}})
     }
 
     console.info('VAULT: New identity created successfully!')

@@ -77,6 +77,13 @@ export default class {
     if ('launch' in this.vault.params) {
       // Check to see if user is signed up, if not, do signup process.
       if (!await this.vault.isSetup()) {
+        if ('inhibit-signup' in this.vault.params) {
+          return this.vault.launch(
+            this.vault.params.launch,
+            { params: {'inhibit-signup': true} }
+          )
+        }
+
         // Process signup parameters.
         let params = { }
         Object.keys(this.vault.params).forEach(k => {
@@ -101,7 +108,6 @@ export default class {
         let opts = { params: { itp: true } }
         return this.vault.launch(this.vault.params.launch, opts)
       }
-
 
       this.vault.launch(this.vault.params.launch)
       return
