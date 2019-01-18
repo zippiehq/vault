@@ -22,6 +22,7 @@
  */
 import crypto from 'crypto'
 import secp256k1 from 'secp256k1'
+import bs58 from 'bs58'
 
 /**
  * Vault "Root" Mode Plugin
@@ -119,9 +120,20 @@ export default class {
         return
       }
 
-      let parts = this.vault.params.recover.split(':')
-      let salt = parts[0]
-      let authkey = Buffer.from(parts[1], 'hex')
+      let authkey, salt
+
+      // Decode hex encoded ':' delimited recovery data.
+      if (this.vault.params.recover.indexOf(':') > -1) {
+        let parts = this.vault.params.recover.split(':')
+        salt = parts[0]
+        authkey = Buffer.from(parts[1], 'hex')
+
+      // Decode base58 encoded recovery data
+      } else if (this.vault.params.recover.length === 88) {
+        let buff = bs58.decode(this.vault.params.recover)
+        salt = buff.slice(0, 32).toString('hex')
+        authkey = buff.slice(32)
+      }
 
       let recovery = await this.vault.fms.fetch(authkey)
       recovery = Buffer.from(JSON.stringify(recovery), 'ascii').toString('hex')
