@@ -114,6 +114,14 @@ export default class {
       return
     }
 
+    if ('diagnostics' in this.vault.params) {
+      if (!confirm('Here be dragons, proceed with caution!') || !this.vault.config.apps.root.debug) {
+        return this.vault.launch(this.vault.config.apps.user.home)
+      }
+
+      return this.vault.launch(this.vault.config.apps.root.debug, { root: true })
+    }
+
     // https://vault.zippie.org#?recover=v
     if ('recover' in this.vault.params) {
       if (await this.vault.isSetup() && !confirm('Do you really want to import identity?')) {
