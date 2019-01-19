@@ -26,7 +26,7 @@ import secp256k1 from 'secp256k1'
 import eccrypto from 'eccrypto'
 
 /**
- * Vault Miscellaneous Actions Provider Plugin
+ * Vault Recovery Actions Provider Plugin
  */
 export default class {
   /**
@@ -41,11 +41,13 @@ export default class {
    * Request:
    *   recovery: {
    *     create: {
+   *        id: RECOVERY_ID,
    *       key: ENCKEY_AS_HEX
    *     }
    *   }
    */
-  async create (req) {
+  async create (event) {
+    let req = event.data
     return await this.withMasterSeed(async function (masterseed) {
       let params = req.recovery.create
 
@@ -81,7 +83,8 @@ export default class {
    *     }
    *   }
    */
-  async restore (req) {
+  async restore (event) {
+    let req = event.data
     let params = req.recovery.restore
 
     let enckey = Buffer.from(params.key, 'hex').slice(0, 32)
@@ -100,9 +103,11 @@ export default class {
   /**
    * MessageDispatcher Interface
    */
-  dispatchTo (mode, req) {
-    if (mode !== 'root' || !('recovery' in req)) return
+  dispatchTo (context, event) {
+    let req = event.data
+    if (context.mode !== 'root' || !('recovery' in req)) return null
 
+    if ('import' in req.recovery) return this.import
     if ('create' in req.recovery) return this.create
     if ('restore' in req.recovery) return this.restore
 

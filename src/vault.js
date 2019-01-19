@@ -26,6 +26,9 @@ import FMS from './apis/fms.js'
 import Permastore from './apis/permastore.js'
 import Mailbox from './apis/mailbox.js'
 
+import { Logger } from './logger'
+import { MessageDispatcher } from './dispatch'
+
 import shajs from 'sha.js'
 import Crypto from 'crypto'
 import secp256k1 from 'secp256k1'
@@ -101,8 +104,13 @@ export default class Vault {
     this.config = config
     this.store = window.localStorage
 
-    // Incoming message receivers
-    this._receivers = []
+    // Create logger
+    this.logger = new Logger('VAULT')
+    // Create event dispatcher
+    this.dispatcher = new MessageDispatcher(this, this.logger)
+
+    // Install base message processors.
+    this.dispatcher.addReceiver(this)
 
     // Vault plugins
     this._plugins = []
@@ -124,9 +132,6 @@ export default class Vault {
     // single FMS request.
     this.__protected_masterseed = null
     this.__protected_masterseed_refs = 0
-
-    // Install window message processors.
-    this.addReceiver(this)
 
     // Import vault plugins
     this.install([
@@ -779,8 +784,10 @@ export default class Vault {
   /**
    * MessageReceiver Interface
    */
-  dispatchTo (mode, req) {
-    if (mode === 'root') { // ROOT-MODE ONLY RECEIVERS
+  dispatchTo (context, event) {
+    let req = event.data
+
+    if (context.mode === 'root') { // ROOT-MODE ONLY RECEIVERS
       if ('launch' in req) return (function (req) { this.launch(req.launch.url, req.launch.opts) })
       if ('newidentity' in req) return this.newidentity
     }
@@ -804,12 +811,14 @@ export default class Vault {
    */
   addReceiver (receiver) {
     if (receiver.constructor === Array) {
-      this._receivers = this._receivers.concat(receiver)
+      for (let i = 0; i < receiver.length; i++) {
+        this.dispatcher.addReceiver(receiver[i])
+      }
       return
     }
 
     if (typeof receiver.dispatchTo === 'function') {
-      this._receivers.push(receiver)
+      this.dispatcher.addReceiver(receiver)
       return
     }
 
@@ -820,16 +829,10 @@ export default class Vault {
    * MessageDispatch Reactor
    */
   async dispatch (event) {
-    let req = event.data
-    req.origin = event.origin
-
-    console.info('VAULT: message received:', req)
-    if (!event.data) console.log('VAULT: ignoring invalid, probably noise...')
-
     // ITP-2.0
     // Called by parent when the user presses the "Zippie Signin" button.
     //XXX: Not happy about this being here.
-    if ('login' in req) {
+    if ('login' in event.data) {
       return requestStorage()
         .then(function (r) {
           event.source.postMessage({
@@ -846,19 +849,8 @@ export default class Vault {
         })
     }
 
-    // Find message receiver
-    for (var i = 0; i < this._receivers.length; i++) {
-      let receiver = this._receivers[i].dispatchTo(this.mode, req)
-      if (!receiver) continue
-
-      let response = await (receiver.bind(this))(req)
-      return event.source.postMessage({
-        callback: event.data.callback,
-        result: response
-      }, event.origin)
-    }
-
-    console.warn('VAULT: message not handled, unknown type:', event)
+    // Pass through to message dispatcher
+    this.dispatcher.dispatch(event)
   }
 }
 

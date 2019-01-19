@@ -43,7 +43,8 @@ export default class PasscodeProvider {
    *     }
    *   }
    */
-  async assign (req) {
+  async assign (event) {
+    let req = event.data
     return await this.withMasterSeed(async function () {
       let params = req.passcode.assign
       let recordhash = shajs('sha256').update('passcodes/' + params.id).digest()
@@ -76,7 +77,8 @@ export default class PasscodeProvider {
    *     }
    *   }
    */
-  async revoke (req) {
+  async revoke (event) {
+    let req = event.data
     return await this.withMasterSeed(async function () {
       let params = req.passcode.revoke
       let recordhash = shajs('sha256').update('passcodes/' + params.id).digest()
@@ -97,7 +99,8 @@ export default class PasscodeProvider {
    *     }
    *   }
    */
-  async verify (req) {
+  async verify (event) {
+    let req = event.data
     return await this.withMasterSeed(async function () {
       let params = req.passcode.verify
 
@@ -133,8 +136,9 @@ export default class PasscodeProvider {
   /**
    * MessageReceiver Interface
    */
-  dispatchTo (mode, req) {
-    if (mode !== 'root' || !('passcode' in req)) return
+  dispatchTo (context, event) {
+    let req = event.data
+    if (context.mode !== 'root' || !('passcode' in req)) return null
 
     if ('assign' in req.passcode) return this.assign
     if ('revoke' in req.passcode) return this.revoke

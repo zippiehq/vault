@@ -37,7 +37,8 @@ export default class IPCRouter {
     vault._ipc_callbacks = {}
   }
 
-  async handleMessage(req) {
+  async handleMessage(event) {
+    let req = event.data
     var params = req.IPCRouterRequest
     var receiver = this._ipc_iframes[params.target]
 
@@ -45,7 +46,7 @@ export default class IPCRouter {
       var response = await new Promise(function(resolve, reject) {
         let id = 'callback-' + this._ipc_callback_counter++
         params.payload.callback = id
-        params.payload.origin = req.origin
+        params.payload.origin = event.origin
 
         this._ipc_callbacks[id] = [resolve, reject]
 
@@ -56,7 +57,8 @@ export default class IPCRouter {
     }
   }
 
-  async handleCallback(req) {
+  async handleCallback(event) {
+    let req = event.data
     console.info('callback', req)
     if(req.IPCRouterRequest.callback !== undefined)
     {
@@ -67,7 +69,8 @@ export default class IPCRouter {
     }
   }
 
-  async InitIframe(req) {
+  async InitIframe(event) {
+    let req = event.data
     var params = req.IPCRouterRequest
 
     if(this._ipc_iframes[params.target] === undefined) {
@@ -82,7 +85,7 @@ export default class IPCRouter {
       if(whitelist !== null) {
         let list = JSON.parse(whitelist)
   
-        if(req.origin in list) {
+        if(event.origin in list) {
           // then everything is ok
           console.info('[IPCRouter]: whitelist check passed')
           isPermitted = true
@@ -116,7 +119,8 @@ export default class IPCRouter {
     return
   }
 
-  async DappConnect(req) {
+  async DappConnect(event) {
+    let req = event.data
     let from = req.from
     let to = req.to
     let whitelist = []
@@ -134,8 +138,9 @@ export default class IPCRouter {
     return
   }
 
-  dispatchTo (mode, req) {
-    if(mode === 'root') {
+  dispatchTo (context, event) {
+    let req = event.data
+    if(context.mode === 'root') {
       // root mode receivers
       if('DappConnectRequest' in req) {
         return this.DappConnect
