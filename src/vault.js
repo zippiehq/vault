@@ -101,7 +101,7 @@ export default class Vault {
    */
   constructor (config) {
     // Local storage and configuration
-    this.config = config
+    this._config = config
     this.store = window.localStorage
 
     // Create logger
@@ -146,6 +146,22 @@ export default class Vault {
       new (require('./plugins/misc.js')).default(),
       new (require('./plugins/ipc_router.js')).default(),
     ])
+  }
+
+  get config () {
+    let result = JSON.parse(JSON.stringify(this._config))
+    for (let i = 0; i < localStorage.length; i++) {
+      let key = localStorage.key(i)
+      if (!key.startsWith('config.')) continue
+
+      let parts = key.split('.').slice(1)
+      let parent = result
+      for (let i = 0; i < parts.length - 1; i++) {
+        parent = parent[parts[i]]
+      }
+      parent[parts[parts.length-1]] = localStorage.getItem(key)
+    }
+    return result
   }
 
   /**
@@ -705,6 +721,23 @@ export default class Vault {
   }
 
   /**
+   * 
+   */
+  async setConfig (ev) {
+    let req = ev.data.setConfig
+
+    let parts = req.key.split('.')
+    let parent = this._config
+    for (var i = 0; i < parts.length - 1; i++) {
+      parent = parent[parts[i]]
+    }
+    parent[parts[parts.length-1]] = req.value
+
+    this.store.setItem('config.' + req.key, req.value)
+    return true
+  }
+
+  /**
    *
    */
   async reboot (req) {
@@ -829,6 +862,7 @@ export default class Vault {
 
     if ('version' in req) return this.getVersion
     if ('config' in req) return this.getConfig
+    if ('setConfig' in req) return this.setConfig
 
     if ('reboot' in req) return this.reboot
 
