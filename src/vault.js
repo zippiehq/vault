@@ -756,6 +756,41 @@ export default class Vault {
     return []
   }
 
+  async setDeviceName (ev) {
+    let req = ev.data.setDeviceName
+
+    let registryhash = shajs('sha256').update('devices').digest()
+    let registryauth = await this.derive(registryhash)
+    let registryauthpub = secp256k1.publicKeyConvert(registryauth.publicKey, false)
+
+    // Retrieve enrollment registry
+    let enrollments = await this.enrollments()
+
+    // Remove potential duplicates
+    let keys = enrollments.map(i => i.deviceKey)
+    enrollments = enrollments.filter((i, p) => {
+      return keys.indexOf(i.deviceKey) === p
+    })
+
+    enrollments = enrollments.map(i => {
+      if (i.deviceKey === req.deviceKey) i.name = req.name
+      return i
+    })
+
+    // Encrypt latest enrollments data
+    let cipher = await eccrypto.encrypt(
+      registryauthpub,
+      Buffer.from(JSON.stringify(enrollments), 'utf8')
+    )
+
+    // Encode cipher data to hex strings
+    Object.keys(cipher).map(k => {cipher[k] = cipher[k].toString('hex')})
+
+    console.info('VAULT: Uploading identity enrollment registry to permastore.')
+    return await this.permastore.store(registryauth.privateKey, cipher)
+
+  }
+
   async enrollmentsReq () {
     let result = await this.enrollments ()
 
@@ -773,10 +808,7 @@ export default class Vault {
     for (let i = 0; i < result.length; i++) {
       let item = result[i]
 
-      // XXX: Replace with .local flag
-      if (item.deviceKey === localpub) {
-        item.name = 'local'
-      }
+      item.isLocal = item.deviceKey === localpub
 
       filtered.push(item)
     }
@@ -796,14 +828,17 @@ export default class Vault {
     }
 
     if ('version' in req) return this.getVersion
-    if ('config' in  req) return this.getConfig
+    if ('config' in req) return this.getConfig
 
     if ('reboot' in req) return this.reboot
 
     if ('isSignedIn' in req) return this.isSignedInReq
 
     if ('signin' in req) return this.signin
+
     if ('enrollments' in req) return this.enrollmentsReq
+
+    if ('setDeviceName' in req) return this.setDeviceName
 
     // FIXME FIXME FIXME
     if ('revoke' in req) return this.revoke
