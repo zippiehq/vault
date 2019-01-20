@@ -37,6 +37,40 @@ export default class {
     vault.addReceiver(this)
   }
 
+  async export (ev) {
+    let req = ev.data
+
+    return await this.withMasterSeed(async function (masterseed) {
+      let authkey = Crypto.randomBytes(32)
+
+      let authpub = secp256k1.publicKeyCreate(authkey, false)
+      let revokekey = secp256k1.ecdh(authpub, authkey)
+      let revokepub = secp256k1.publicKeyCreate(revokekey)
+
+      let promise = new Promise(function (resolve, reject) {
+        let aeskey = authkey.slice(0,16)
+        let aesiv = authkey.slice(16,32)
+        let cipher = Crypto.createCipheriv('aes-128-cbc', aeskey, aesiv)
+
+        let result = ''
+        cipher.on('readable', _ => {
+          const data = cipher.read()
+          if (data) result += data.toString('hex')
+        })
+        cipher.on('end', _ => {
+          resolve(result)
+        })
+
+        cipher.write(masterseed.toString('hex'))
+        cipher.end()
+      })
+
+      return promise
+        .then(r => this.fms.store(authpub, revokepub, r))
+        .then(r => authkey.toString('hex'))
+    }.bind(this))
+  }
+
   /**
    * Request:
    *   recovery: {
@@ -107,6 +141,7 @@ export default class {
     let req = event.data
     if (context.mode !== 'root' || !('recovery' in req)) return null
 
+    if ('export' in req.recovery) return this.export
     if ('import' in req.recovery) return this.import
     if ('create' in req.recovery) return this.create
     if ('restore' in req.recovery) return this.restore
