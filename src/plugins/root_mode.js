@@ -114,11 +114,9 @@ export default class {
       return
     }
 
-    if ('diagnostics' in this.vault.params) {
-      if (!confirm('Here be dragons, proceed with caution!') || !this.vault.config.apps.root.debug) {
-        return this.vault.launch(this.vault.config.apps.user.home)
-      }
-
+    if ('diagnostics' in this.vault.params &&
+        this.vault.config.apps.root.debug &&
+        confirm('Here be dragons, proceed with caution!')) {
       return this.vault.launch(this.vault.config.apps.root.debug, { root: true })
     }
 
