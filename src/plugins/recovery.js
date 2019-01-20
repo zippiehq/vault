@@ -45,7 +45,7 @@ export default class {
 
       let authpub = secp256k1.publicKeyCreate(authkey, false)
       let revokekey = secp256k1.ecdh(authpub, authkey)
-      let revokepub = secp256k1.publicKeyCreate(revokekey)
+      let revokepub = secp256k1.publicKeyCreate(revokekey, false)
 
       let promise = new Promise(function (resolve, reject) {
         let aeskey = authkey.slice(0,16)

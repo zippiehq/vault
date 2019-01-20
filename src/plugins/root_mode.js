@@ -236,15 +236,14 @@ export default class {
       // REVOKE OTP
       let authpub = secp256k1.publicKeyCreate(key, false)
       let revokekey = secp256k1.ecdh(authpub, key)
-      let revokepub = secp256k1.publicKeyCreate(revokekey, false)
 
       return promise
         .then(function (masterseed) {
-          console.log(masterseed)
           return this.vault.initidentity(Buffer.from(masterseed, 'hex'))
         }.bind(this))
         .then(function () {
-            return this.vault.fms.revoke(revokekey)
+          console.info('VAULT: Attempting to remove one-time recovery data.')
+          return this.vault.fms.revoke(revokekey)
         }.bind(this))
         .then(function () {
           this.vault.launch(this.vault.config.apps.user.home)
