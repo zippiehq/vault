@@ -649,9 +649,12 @@ export default class Vault {
 
   /**
    * Deregisters and revokes a card or device from a users identity.
+   * @param {object} req - Revocation Request
+   *    `{ revoke: { deviceKey: 'DEVICE_KEY' } }`
    */
   //XXX: Reimplement as a CRDT TwoPhaseSet
-  async revoke (req) {
+  async revoke (ev) {
+    let req = ev.data
     let params = req.revoke
 
     // Derive revoke credentials for FMS device data.
