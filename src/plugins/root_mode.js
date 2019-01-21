@@ -22,6 +22,7 @@
  */
 import crypto from 'crypto'
 import secp256k1 from 'secp256k1'
+import bs58 from 'bs58'
 
 /**
  * Vault "Root" Mode Plugin
@@ -113,15 +114,32 @@ export default class {
       return
     }
 
+    if ('diagnostics' in this.vault.params &&
+        this.vault.config.apps.root.debug &&
+        confirm('Here be dragons, proceed with caution!')) {
+      return this.vault.launch(this.vault.config.apps.root.debug, { root: true })
+    }
+
     // https://vault.zippie.org#?recover=v
     if ('recover' in this.vault.params) {
       if (await this.vault.isSetup() && !confirm('Do you really want to import identity?')) {
         return
       }
 
-      let parts = this.vault.params.recover.split(':')
-      let salt = parts[0]
-      let authkey = Buffer.from(parts[1], 'hex')
+      let authkey, salt
+
+      // Decode hex encoded ':' delimited recovery data.
+      if (this.vault.params.recover.indexOf(':') > -1) {
+        let parts = this.vault.params.recover.split(':')
+        salt = parts[0]
+        authkey = Buffer.from(parts[1], 'hex')
+
+      // Decode base58 encoded recovery data
+      } else if (this.vault.params.recover.length === 88) {
+        let buff = bs58.decode(this.vault.params.recover)
+        salt = buff.slice(0, 32).toString('hex')
+        authkey = buff.slice(32)
+      }
 
       let recovery = await this.vault.fms.fetch(authkey)
       recovery = Buffer.from(JSON.stringify(recovery), 'ascii').toString('hex')
@@ -216,15 +234,14 @@ export default class {
       // REVOKE OTP
       let authpub = secp256k1.publicKeyCreate(key, false)
       let revokekey = secp256k1.ecdh(authpub, key)
-      let revokepub = secp256k1.publicKeyCreate(revokekey, false)
 
       return promise
         .then(function (masterseed) {
-          console.log(masterseed)
           return this.vault.initidentity(Buffer.from(masterseed, 'hex'))
         }.bind(this))
         .then(function () {
-            return this.vault.fms.revoke(revokekey)
+          console.info('VAULT: Attempting to remove one-time recovery data.')
+          return this.vault.fms.revoke(revokekey)
         }.bind(this))
         .then(function () {
           this.vault.launch(this.vault.config.apps.user.home)

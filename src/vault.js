@@ -26,6 +26,9 @@ import FMS from './apis/fms.js'
 import Permastore from './apis/permastore.js'
 import Mailbox from './apis/mailbox.js'
 
+import { Logger } from './logger'
+import { MessageDispatcher } from './dispatch'
+
 import shajs from 'sha.js'
 import Crypto from 'crypto'
 import secp256k1 from 'secp256k1'
@@ -98,11 +101,16 @@ export default class Vault {
    */
   constructor (config) {
     // Local storage and configuration
-    this.config = config
+    this._config = config
     this.store = window.localStorage
 
-    // Incoming message receivers
-    this._receivers = []
+    // Create logger
+    this.logger = new Logger('VAULT')
+    // Create event dispatcher
+    this.dispatcher = new MessageDispatcher(this, this.logger)
+
+    // Install base message processors.
+    this.dispatcher.addReceiver(this)
 
     // Vault plugins
     this._plugins = []
@@ -125,9 +133,6 @@ export default class Vault {
     this.__protected_masterseed = null
     this.__protected_masterseed_refs = 0
 
-    // Install window message processors.
-    this.addReceiver(this)
-
     // Import vault plugins
     this.install([
       new (require('./plugins/cookie_vault_injector.js')).default(),
@@ -141,6 +146,22 @@ export default class Vault {
       new (require('./plugins/misc.js')).default(),
       new (require('./plugins/ipc_router.js')).default(),
     ])
+  }
+
+  get config () {
+    let result = JSON.parse(JSON.stringify(this._config))
+    for (let i = 0; i < localStorage.length; i++) {
+      let key = localStorage.key(i)
+      if (!key.startsWith('config.')) continue
+
+      let parts = key.split('.').slice(1)
+      let parent = result
+      for (let i = 0; i < parts.length - 1; i++) {
+        parent = parent[parts[i]]
+      }
+      parent[parts[parts.length-1]] = localStorage.getItem(key)
+    }
+    return result
   }
 
   /**
@@ -644,9 +665,12 @@ export default class Vault {
 
   /**
    * Deregisters and revokes a card or device from a users identity.
+   * @param {object} req - Revocation Request
+   *    `{ revoke: { deviceKey: 'DEVICE_KEY' } }`
    */
   //XXX: Reimplement as a CRDT TwoPhaseSet
-  async revoke (req) {
+  async revoke (ev) {
+    let req = ev.data
     let params = req.revoke
 
     // Derive revoke credentials for FMS device data.
@@ -694,6 +718,23 @@ export default class Vault {
    */
   async getConfig (req) {
     return this.config
+  }
+
+  /**
+   * 
+   */
+  async setConfig (ev) {
+    let req = ev.data.setConfig
+
+    let parts = req.key.split('.')
+    let parent = this._config
+    for (var i = 0; i < parts.length - 1; i++) {
+      parent = parent[parts[i]]
+    }
+    parent[parts[parts.length-1]] = req.value
+
+    this.store.setItem('config.' + req.key, req.value)
+    return true
   }
 
   /**
@@ -748,6 +789,41 @@ export default class Vault {
     return []
   }
 
+  async setDeviceName (ev) {
+    let req = ev.data.setDeviceName
+
+    let registryhash = shajs('sha256').update('devices').digest()
+    let registryauth = await this.derive(registryhash)
+    let registryauthpub = secp256k1.publicKeyConvert(registryauth.publicKey, false)
+
+    // Retrieve enrollment registry
+    let enrollments = await this.enrollments()
+
+    // Remove potential duplicates
+    let keys = enrollments.map(i => i.deviceKey)
+    enrollments = enrollments.filter((i, p) => {
+      return keys.indexOf(i.deviceKey) === p
+    })
+
+    enrollments = enrollments.map(i => {
+      if (i.deviceKey === req.deviceKey) i.name = req.name
+      return i
+    })
+
+    // Encrypt latest enrollments data
+    let cipher = await eccrypto.encrypt(
+      registryauthpub,
+      Buffer.from(JSON.stringify(enrollments), 'utf8')
+    )
+
+    // Encode cipher data to hex strings
+    Object.keys(cipher).map(k => {cipher[k] = cipher[k].toString('hex')})
+
+    console.info('VAULT: Uploading identity enrollment registry to permastore.')
+    return await this.permastore.store(registryauth.privateKey, cipher)
+
+  }
+
   async enrollmentsReq () {
     let result = await this.enrollments ()
 
@@ -765,10 +841,7 @@ export default class Vault {
     for (let i = 0; i < result.length; i++) {
       let item = result[i]
 
-      // XXX: Replace with .local flag
-      if (item.deviceKey === localpub) {
-        item.name = 'local'
-      }
+      item.isLocal = item.deviceKey === localpub
 
       filtered.push(item)
     }
@@ -779,21 +852,27 @@ export default class Vault {
   /**
    * MessageReceiver Interface
    */
-  dispatchTo (mode, req) {
-    if (mode === 'root') { // ROOT-MODE ONLY RECEIVERS
+  dispatchTo (context, event) {
+    let req = event.data
+
+    if (context.mode === 'root') { // ROOT-MODE ONLY RECEIVERS
       if ('launch' in req) return (function (req) { this.launch(req.launch.url, req.launch.opts) })
       if ('newidentity' in req) return this.newidentity
     }
 
     if ('version' in req) return this.getVersion
-    if ('config' in  req) return this.getConfig
+    if ('config' in req) return this.getConfig
+    if ('setConfig' in req) return this.setConfig
 
     if ('reboot' in req) return this.reboot
 
     if ('isSignedIn' in req) return this.isSignedInReq
 
     if ('signin' in req) return this.signin
+
     if ('enrollments' in req) return this.enrollmentsReq
+
+    if ('setDeviceName' in req) return this.setDeviceName
 
     // FIXME FIXME FIXME
     if ('revoke' in req) return this.revoke
@@ -804,12 +883,14 @@ export default class Vault {
    */
   addReceiver (receiver) {
     if (receiver.constructor === Array) {
-      this._receivers = this._receivers.concat(receiver)
+      for (let i = 0; i < receiver.length; i++) {
+        this.dispatcher.addReceiver(receiver[i])
+      }
       return
     }
 
     if (typeof receiver.dispatchTo === 'function') {
-      this._receivers.push(receiver)
+      this.dispatcher.addReceiver(receiver)
       return
     }
 
@@ -820,16 +901,10 @@ export default class Vault {
    * MessageDispatch Reactor
    */
   async dispatch (event) {
-    let req = event.data
-    req.origin = event.origin
-
-    console.info('VAULT: message received:', req)
-    if (!event.data) console.log('VAULT: ignoring invalid, probably noise...')
-
     // ITP-2.0
     // Called by parent when the user presses the "Zippie Signin" button.
     //XXX: Not happy about this being here.
-    if ('login' in req) {
+    if ('login' in event.data) {
       return requestStorage()
         .then(function (r) {
           event.source.postMessage({
@@ -846,19 +921,8 @@ export default class Vault {
         })
     }
 
-    // Find message receiver
-    for (var i = 0; i < this._receivers.length; i++) {
-      let receiver = this._receivers[i].dispatchTo(this.mode, req)
-      if (!receiver) continue
-
-      let response = await (receiver.bind(this))(req)
-      return event.source.postMessage({
-        callback: event.data.callback,
-        result: response
-      }, event.origin)
-    }
-
-    console.warn('VAULT: message not handled, unknown type:', event)
+    // Pass through to message dispatcher
+    this.dispatcher.dispatch(event)
   }
 }
 

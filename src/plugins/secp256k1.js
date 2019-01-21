@@ -31,17 +31,17 @@ export default class Secp256k1Provider {
    *
    */
   install (vault) {
-    this.vault = vault
     vault.addReceiver(this)
   }
 
   /**
    *
    */
-  async keyinfo (req) {
+  async keyinfo (event) {
+    let req = event.data
     let params = req.secp256k1KeyInfo
 
-    let ahdkey = await (await this.pubex(req.origin)).derive(params.key.derive)
+    let ahdkey = await (await this.pubex(event.origin)).derive(params.key.derive)
     let pubkey = secp256k1.publicKeyConvert(ahdkey.publicKey, false)
 
     return {
@@ -53,9 +53,10 @@ export default class Secp256k1Provider {
   /**
    *
    */
-  async sign (req) {
+  async sign (event) {
+    let req = event.data
     let params = req.secp256k1Sign
-    let k = await (await this.privex(req.origin)).derive(params.key.derive).privateKey
+    let k = await (await this.privex(event.origin)).derive(params.key.derive).privateKey
     var s = secp256k1.sign(Buffer.from(params.hash, 'hex'), k)
 
     return {
@@ -68,7 +69,8 @@ export default class Secp256k1Provider {
   /**
    *
    */
-  async encrypt (req) {
+  async encrypt (event) {
+    let req = event.data
     let params = req.secp256k1Encrypt
 
     let ecpub = Buffer.from(params.pubkey, 'hex')
@@ -87,24 +89,27 @@ export default class Secp256k1Provider {
   /**
    *
    */
-  async decrypt (req) {
+  async decrypt (event) {
+    let req = event.data
     let params = req.secp256k1Decrypt
 
-    let k = await (await this.privex(req.origin)).derive(params.key.derive).privateKey
+    let k = await (await this.privex(event.origin)).derive(params.key.derive).privateKey
     var cipher = {}
 
     let keys = ['iv', 'ephemPublicKey', 'ciphertext', 'mac']
     keys.forEach(i => {
       cipher[i] = Buffer.from(params[i], 'hex')
     })
-    
+
     return (await eccrypto.decrypt(k, cipher)).toString('hex')
   }
 
   /**
    * MessageReceiver Interface
    */
-  dispatchTo (node, req) {
+  dispatchTo (context, event) {
+    let req = event.data
+
     if ('secp256k1KeyInfo' in req) return this.keyinfo
     else if ('secp256k1Sign' in req) return this.sign
     else if ('secp256k1Encrypt' in req) return this.encrypt

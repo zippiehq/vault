@@ -43,7 +43,8 @@ export default class {
   /**
    *  In root mode replaces vault with some external URI.
    */
-  async open (req) {
+  async open (event) {
+    let req = event.data
     console.info('VAULT: Opening external URI:', req.open.uri)
     window.location = req.open.uri
   }
@@ -51,7 +52,8 @@ export default class {
   /**
    *  In root mode replaces vault with qrscan.io site.
    */
-  async qrscan (req) {
+  async qrscan (event) {
+    let req = event.data
     console.info('VAULT: Opening qrscan.io:', req.uri)
     window.location = 'https://qrscan.io'
     return true
@@ -60,7 +62,8 @@ export default class {
   /**
    *
    */
-  async referral (req) {
+  async referral (event) {
+    let req = event.data
     let hash = shajs('sha256').update('refs').digest()
     let pubex = await (await this.vault.derive(hash)).derive("m/0'/0").publicExtendedKey
 
@@ -133,7 +136,8 @@ export default class {
   /**
    *
    */
-  async postTo (req) {
+  async postTo (event) {
+    let req = event.data
     const params = req.postTo
 
     let pubex = await HDKey.fromExtendedKey(params.key).derive('m/1')
@@ -151,8 +155,9 @@ export default class {
   /**
    * MessageDispatcher Interface
    */
-  dispatchTo (mode, req) {
-    if (mode === 'root') { // ROOT-MODE ONLY RECEIVERS
+  dispatchTo (context, event) {
+    let req = event.data
+    if (context.mode === 'root') { // ROOT-MODE ONLY RECEIVERS
       if ('open' in req) return this.open
       if ('qrscan' in req) return this.qrscan
     }

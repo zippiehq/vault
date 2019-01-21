@@ -34,14 +34,14 @@ export default class {
    *
    */
   install (vault) {
-    this.vault = vault
     vault.addReceiver(this)
   }
 
   /**
    *
    */
-  async cardinfo (req) {
+  async cardinfo (event) {
+    let req = event.data
     let info = null
     let enrollments = await this.enrollments()
 
@@ -59,7 +59,9 @@ export default class {
   /**
    *
    */
-  async enrollcard (req) {
+  async enrollcard (event) {
+    let req = event.data
+
     return await this.withMasterSeed(async function (masterseed) {
       let params = req.enrollcard
 
@@ -131,7 +133,9 @@ export default class {
   /**
    *
    */
-  async enroleeinfo (req) {
+  async enroleeinfo (event) {
+    let req = event.data
+
     // Generate local device and auth keys.
     let localkey = crypto.randomBytes(32)
     let localpub = secp256k1.publicKeyCreate(localkey, false)
@@ -154,7 +158,8 @@ export default class {
   /**
    *
    */
-  async enrolldevice (req) {
+  async enrolldevice (event) {
+    let req = event.data
     let params = req.enrolldevice
 
     let devpub = Buffer.from(params.devicepubkey, 'hex')
@@ -189,7 +194,8 @@ export default class {
   /**
    *
    */
-  async finishenrollment (req) {
+  async finishenrollment (event) {
+    let req = event.data
     let params = req.finishenrollment
 
     this.store.setItem('localslice_e',  JSON.stringify(params))
@@ -210,10 +216,11 @@ export default class {
   /**
    * MessageReceiver Interface
    */
-  dispatchTo (mode, req) {
+  dispatchTo (context, event) {
+    let req = event.data
     if ('cardinfo' in req) return this.cardinfo
 
-    if (mode === 'root') { // ROOT-MODE ONLY RECEIVERS
+    if (context.mode === 'root') { // ROOT-MODE ONLY RECEIVERS
       if ('enrollcard' in req) return this.enrollcard
       else if ('revokecard' in req) return this.revokecard
       else if ('enroleeinfo' in req) return this.enroleeinfo

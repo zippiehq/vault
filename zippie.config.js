@@ -9,7 +9,8 @@ module.exports = {
       root: {
         pinauth: 'https://pin.dev.zippie.org',
         card: 'https://card.dev.zippie.org/v0.1/',
-        signup: 'https://signup.dev.zippie.org'
+        signup: 'https://signup.dev.zippie.org',
+        debug: 'https://sandbox.dev.zippie.org'
       },
       user: {
         home: 'https://my.dev.zippie.org'
@@ -27,7 +28,8 @@ module.exports = {
       root: {
         pinauth: 'https://pin.testing.zippie.org',
         card: 'https://card.testing.zippie.org/v0.1/',
-        signup: 'https://signup.testing.zippie.org'
+        signup: 'https://signup.testing.zippie.org',
+        debug: 'https://sandbox.dev.zippie.org'
       },
       user: {
         home: 'https://my.testing.zippie.org'

@@ -44,8 +44,8 @@ export default class {
   /**
    *
    */
-  async set (req) {
-    req = req.userdata.set
+  async set (event) {
+    const req = event.data.userdata.set
     const keyhash = shajs('sha256').update(req.key).digest()
     const masterkey = await this.derive(keyhash)
 
@@ -70,8 +70,8 @@ export default class {
   /**
    *
    */
-  async get (req) {
-    req = req.userdata.get
+  async get (event) {
+    const req = event.data.userdata.get
     const keyhash = shajs('sha256').update(req.key).digest()
     const masterkey = await this.derive(keyhash)
 
@@ -96,7 +96,8 @@ export default class {
   /**
    *
    */
-  async clear (req) {
+  async clear (event) {
+    const req = event.data
     const keyhash = shajs('sha256').update(req.key).digest()
     const masterkey = await this.derive(keyhash)
     const revokekey = await masterkey.derive('m/1')
@@ -107,7 +108,8 @@ export default class {
   /**
    * MessageReceiver Interface
    */
-  dispatchTo (mode, req) {
+  dispatchTo (context, event) {
+    let req = event.data
     if (!('userdata' in req)) return
 
     if ('set' in req.userdata) return this.set
