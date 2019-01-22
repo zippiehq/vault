@@ -9,8 +9,8 @@ module.exports = {
       root: {
         pinauth: 'https://pin.dev.zippie.org',
         card: 'https://card.dev.zippie.org/v0.1/',
-        signup: 'https://signup.dev.zippie.org',
-        debug: 'https://sandbox.dev.zippie.org'
+        signup: 'https://signup.dev.zippie.org/',
+        debug: 'https://127.0.0.1:3000'
       },
       user: {
         home: 'https://my.dev.zippie.org'

@@ -61,16 +61,23 @@ export default class {
 
     // https://vault.zippie.org/#?signup=[uri-to-redirect-back-to]
     if ('signup' in this.vault.params) {
-      if (await this.vault.isSetup()) {
-        alert('Already signed up.')
-        return
+      // Process signup parameters.
+      let params = { }
+      Object.keys(this.vault.params).forEach(k => {
+        if (k.startsWith('signup')) params[k] = this.vault.params[k]
+      })
+
+      let path = ''
+      if ('signup_page' in params) {
+        path = '/#' + params['signup_page']
       }
 
-      this.vault.launch(this.vault.config.apps.root.signup, { root: true })
+      this.vault.launch(this.vault.config.apps.root.signup + path, { root: true, params: params })
         .then(function () {
-          this.vault.launch(this.vault.config.apps.user.home)
+          let opts
+          if (this.vault.params.itp) opts = { params: { itp: true } }
+          this.vault.launch(this.vault.params.launch, opts)
         }.bind(this))
-
       return
     }
 
