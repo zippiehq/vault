@@ -638,11 +638,13 @@ export default class Vault {
     let registryauth = await this.derive(registryhash)
     let registryauthpub = secp256k1.publicKeyConvert(registryauth.publicKey, false)
 
+    let createdAt = Date.now()
+
     // Retrieve enrollment registry
     let enrollments = await this.enrollments()
 
     // Add new device to registry
-    enrollments.push({ type, name, deviceKey, signingKey })
+    enrollments.push({ type, name, deviceKey, signingKey, createdAt })
 
     // Remove potential duplicates
     let keys = enrollments.map(i => i.deviceKey)
