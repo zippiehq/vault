@@ -103,6 +103,7 @@ export default class {
 
       console.info('VAULT: Uploading recovery data.')
       await this.fms.store(authpub, revokepub, cipher)
+      await this.enroll('uri', params.id, encpub.toString('hex'))
 
       return { authkey: authkey.toString('hex') }
     }.bind(this))

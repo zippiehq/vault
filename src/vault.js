@@ -638,11 +638,13 @@ export default class Vault {
     let registryauth = await this.derive(registryhash)
     let registryauthpub = secp256k1.publicKeyConvert(registryauth.publicKey, false)
 
+    let createdAt = Date.now()
+
     // Retrieve enrollment registry
     let enrollments = await this.enrollments()
 
     // Add new device to registry
-    enrollments.push({ type, name, deviceKey, signingKey })
+    enrollments.push({ type, name, deviceKey, signingKey, createdAt })
 
     // Remove potential duplicates
     let keys = enrollments.map(i => i.deviceKey)
@@ -673,19 +675,30 @@ export default class Vault {
     let req = ev.data
     let params = req.revoke
 
+    // Retrieve enrollment registry
+    let enrollments = await this.enrollments()
+
+    let device = enrollments.filter(v => v.deviceKey === params.deviceKey)[0]
+    if (!device) return Promise.reject('Unable to find device in enrollments.')
+
     // Derive revoke credentials for FMS device data.
-    let revokehash = shajs('sha256').update('devices/' + params.deviceKey).digest()
+    let revokekey = 'devices/' + params.deviceKey
+
+    //   If enrollment is a recovery URI, we use a different revocation
+    // key derivation method.
+    if (device.type === 'uri') revokekey = 'recovery/' + device.name
+
+    // Derive FMS revocation key
+    let revokehash = shajs('sha256').update(revokekey).digest();
     let revokeauth = await (await this.derive(revokehash)).derive("m/0")
 
+    // Revoke FMS device recovery/signin information.
     await this.fms.revoke(revokeauth.privateKey)
 
     // Derive access credentials for permastore device registry.
     let registryhash = shajs('sha256').update('devices').digest()
     let registryauth = await this.derive(registryhash)
     let registryauthpub = secp256k1.publicKeyConvert(registryauth.publicKey, false)
-
-    // Retrieve enrollment registry
-    let enrollments = await this.enrollments()
 
     // Remove requested device enrollment and any duplicates.
     let keys = enrollments.map(i => i.deviceKey)
@@ -798,6 +811,11 @@ export default class Vault {
 
     // Retrieve enrollment registry
     let enrollments = await this.enrollments()
+
+    let device = enrollments.filter(v => v.deviceKey === req.deviceKey)[0]
+    if (!device) return Promise.reject('Unable to find device in enrollments.')
+
+    if (device.type === 'uri') return Promise.reject('Unable to rename devices of type `uri`.')
 
     // Remove potential duplicates
     let keys = enrollments.map(i => i.deviceKey)
