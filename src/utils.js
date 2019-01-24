@@ -25,12 +25,12 @@ export function detectDeviceName () {
 
   if (navigator.userAgent.includes('Firefox')) {
     deviceName = 'Firefox'
+  } else if (navigator.userAgent.includes('Opera') || navigator.userAgent.includes('OPR') || navigator.userAgent.includes('OPT')) {
+    deviceName = 'Opera'
   } else if (navigator.userAgent.includes('Chrome')) {
     deviceName = 'Chrome'
   } else if (navigator.userAgent.includes('Safari')) {
     deviceName = 'Safari'
-  } else if (navigator.userAgent.includes('Opera') || navigator.userAgent.includes('OPR')) {
-    deviceName = 'Opera'
   }
 
   // If we've not detected a supported browser, bail out.
