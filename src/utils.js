@@ -20,6 +20,25 @@
  * SOFTWARE.
  *
  */
+export function hashToParams (uri) {
+  let parser = document.createElement('a')
+  parser.href = uri
+
+  let hparts = parser.hash.slice(1).split('?')
+  let params = {}
+
+  let query = hparts[1]
+  if (query !== undefined) {
+    let qparts = query.split(';')
+    for (let i = 0; i < qparts.length; i++) {
+      let kv = qparts[i].split('=')
+      params[kv[0]] = kv[1] || true
+    }
+  }
+
+  return params
+}
+
 export function detectDeviceName () {
   let deviceName = null
 
