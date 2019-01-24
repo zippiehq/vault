@@ -633,7 +633,7 @@ export default class Vault {
    * Registers a card or device to the users identity.
    */
   //XXX: Reimplement as a CRDT TwoPhaseSet
-  async enroll (type, name, deviceKey, signingKey) {
+  async enroll (type, name, deviceKey, props) {
     let registryhash = shajs('sha256').update('devices').digest()
     let registryauth = await this.derive(registryhash)
     let registryauthpub = secp256k1.publicKeyConvert(registryauth.publicKey, false)
@@ -644,7 +644,11 @@ export default class Vault {
     let enrollments = await this.enrollments()
 
     // Add new device to registry
-    enrollments.push({ type, name, deviceKey, signingKey, createdAt })
+    enrollments.push(
+        Object.assign({
+          type, name, deviceKey, createdAt
+        }, props)
+    )
 
     // Remove potential duplicates
     let keys = enrollments.map(i => i.deviceKey)

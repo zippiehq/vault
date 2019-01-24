@@ -37,6 +37,12 @@ export default class {
     vault.addReceiver(this)
   }
 
+  /**
+   * Generates a recovery importable via "import" root mode query handler.
+   * This is meant for debugging purposes, there is no passphrase security
+   * for this generated recovery. The "import" root mode query handler will
+   * destroy this recovery data when it successfully recovers the identity.
+   */
   async export (ev) {
     let req = ev.data
 
