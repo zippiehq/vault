@@ -802,8 +802,9 @@ export default class Vault {
     return []
   }
 
-  async setDeviceName (ev) {
-    let req = ev.data.setDeviceName
+  async setEnrollmentProperty (ev) {
+    let req = ev.data.setEnrollmentProperty
+    let prop = req.key
 
     let registryhash = shajs('sha256').update('devices').digest()
     let registryauth = await this.derive(registryhash)
@@ -815,8 +816,6 @@ export default class Vault {
     let device = enrollments.filter(v => v.deviceKey === req.deviceKey)[0]
     if (!device) return Promise.reject('Unable to find device in enrollments.')
 
-    if (device.type === 'uri') return Promise.reject('Unable to rename devices of type `uri`.')
-
     // Remove potential duplicates
     let keys = enrollments.map(i => i.deviceKey)
     enrollments = enrollments.filter((i, p) => {
@@ -824,7 +823,7 @@ export default class Vault {
     })
 
     enrollments = enrollments.map(i => {
-      if (i.deviceKey === req.deviceKey) i.name = req.name
+      if (i.deviceKey === req.deviceKey) i[prop] = req.value
       return i
     })
 
@@ -839,7 +838,19 @@ export default class Vault {
 
     console.info('VAULT: Uploading identity enrollment registry to permastore.')
     return await this.permastore.store(registryauth.privateKey, cipher)
+  }
 
+  async setDeviceName (ev) {
+    return this.setEnrollmentProperty({
+      callback: ev.data.callback,
+      data: {
+        setEnrollmentProperty: {
+          deviceKey: ev.data.setDeviceName.deviceKey,
+          key: 'name',
+          value: ev.data.setDeviceName.name
+        }
+      }
+    })
   }
 
   async enrollmentsReq () {
@@ -889,6 +900,7 @@ export default class Vault {
     if ('signin' in req) return this.signin
 
     if ('enrollments' in req) return this.enrollmentsReq
+    if ('setEnrollmentProperty' in req) return this.setEnrollmentProperty
 
     if ('setDeviceName' in req) return this.setDeviceName
 
