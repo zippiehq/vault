@@ -64,12 +64,13 @@ export default class {
       // Process signup parameters.
       let params = { }
       Object.keys(this.vault.params).forEach(k => {
-        if (k.startsWith('signup')) params[k] = this.vault.params[k]
+        if (k.startsWith('signup_')) params[k] = this.vault.params[k]
       })
 
       let path = ''
       if ('signup_page' in params) {
         path = '/#' + params['signup_page']
+        delete params['signup_page']
       }
 
       this.vault.launch(this.vault.config.apps.root.signup + path, { root: true, params: params })
@@ -95,12 +96,13 @@ export default class {
         // Process signup parameters.
         let params = { }
         Object.keys(this.vault.params).forEach(k => {
-          if (k.startsWith('signup')) params[k] = this.vault.params[k]
+          if (k.startsWith('signup_')) params[k] = this.vault.params[k]
         })
 
         let path = ''
         if ('signup_page' in params) {
           path = '/#' + params['signup_page']
+          delete params['signup_page']
         }
 
         this.vault.launch(this.vault.config.apps.root.signup + path, { root: true, params: params })
@@ -154,7 +156,7 @@ export default class {
       // Process signup parameters.
       let params = { }
       Object.keys(this.vault.params).forEach(k => {
-        if (k.startsWith('signup')) params[k] = this.vault.params[k]
+        if (k.startsWith('signup_')) params[k] = this.vault.params[k]
       })
 
       this.vault.launch(this.vault.config.apps.root.signup + '/#/recover/auth/' + salt + '/' + recovery, { root: true, params: params })

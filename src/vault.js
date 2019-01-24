@@ -37,7 +37,7 @@ import eccrypto from 'eccrypto'
 import HDKey from 'hdkey'
 import secrets from 'secrets.js-grempe'
 
-import { detectDeviceName } from './utils'
+import { hashToParams, detectDeviceName } from './utils'
 
 // vault database contains:
 // cache of app hash -> app-pubex
@@ -218,21 +218,16 @@ export default class Vault {
       this.mode = 'enclave'
     }
 
+    //   Extract magic cookie from URI hash, it should be the part before any
+    // query parameters, which are prefixed with the ``?'' character
     let hparts = window.location.hash.slice(1).split('?')
-
     this.magiccookie = hparts[0]
 
-    let query = hparts[1]
-    if (query !== undefined) {
-      let qparts = query.split(';')
-      for (let i = 0; i < qparts.length; i++) {
-        let kv = qparts[i].split('=')
-        this.params[kv[0]] = kv[1] || true
-      }
+    // Parse vault query parameters
+    this.params = hashToParams(window.location)
 
-      // Strip params from URI fragment part
-      //window.location.hash = hash.slice(0, hash.indexOf('?'))
-    }
+    // Strip params from URI fragment part
+    //window.location.hash = hash.slice(0, hash.indexOf('?'))
 
     console.info('VAULT: Parsed vault parameters:', this.params)
 
@@ -293,23 +288,11 @@ export default class Vault {
     // Decompose URI for parameter injection
     let host = uri.split('#')[0]
 
-    // Get URI hash, if there is one.
-    let hash = uri.split('#')[1] || ''
-    let paramstr = hash.split('?')[1] || ''
-
-    // Strip off paramstr
-    hash = hash.split('?')[0]
+    let hash = uri.split('#')[1]
+    hash = (hash || '').split('?')[0]
 
     // Collect hash parameters into params object.
-    let params = {}
-    let p = paramstr.split(';')
-
-    if (p[0] !== '') {
-      for (var i = 0; i < p.length; i++) {
-        let parts = p[i].split('=')
-        params[parts[0]] = parts[1]
-      }
-    }
+    let params = hashToParams(uri)
 
     // If we want to launch user app, we need to get pubex before we serialize
     // below parameters, so we can pass the cookie through to the dapp.
@@ -319,14 +302,10 @@ export default class Vault {
     }
 
     // Inject specified parameters from provided opts into target params
-    if (opts && opts.params) {
-      Object.keys(opts.params).forEach(k => {
-        params[k] = opts.params[k]
-      })
-    }
+    if (opts && opts.params) params = Object.assign(params, opts.params)
 
     // Recombine params into paramstr for URI building
-    paramstr = ''
+    let paramstr = ''
     Object.keys(params).forEach(k => {
       paramstr += (paramstr.length > 0 ? ';' : '') + k + '=' + params[k]
     })
