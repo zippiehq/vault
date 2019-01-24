@@ -48,31 +48,6 @@ import { hashToParams, detectDeviceName } from './utils'
 
 //TODO:
 //  - Local caching of pubex's
-//  - User data storing in vault (language preference, etc.)
-
-/**
- * Webkit ITP 2.0 Support
- */
-//XXX: Not happy about this being here.
-//     Move to plugin
-function requestStorage () {
-  return new Promise (function (resolve, reject) {
-    if (document.requestStorageAccess !== undefined) {
-      return document.requestStorageAccess()
-        .then(
-          function () {
-            console.log('ITP: Storage access granted!')
-            return resolve(true)
-          },
-          function () {
-            console.error('ITP: Storage access denied!')
-            return reject()
-          })
-    }
-
-    return resolve(true)
-  })
-}
 
 /**
  * Zippie Vault
@@ -137,6 +112,7 @@ export default class Vault {
 
     // Import vault plugins
     this.install([
+      new (require('./plugins/itp_support.js')).default(),
       new (require('./plugins/cookie_vault_injector.js')).default(),
       new (require('./plugins/root_mode.js')).default(),
       new (require('./plugins/user_mode.js')).default(),
@@ -204,9 +180,6 @@ export default class Vault {
     // Iterate vault plugins install phase.
     await this.plugin_exec('install', this)
 
-    // Start listening for incoming message events
-    self.addEventListener('message', this.dispatch.bind(this))
-
     // Check to see if we're running in root mode.
     if (window.top === window.self) {
       console.info('VAULT: Running in root mode.')
@@ -218,6 +191,9 @@ export default class Vault {
       this.mode = 'enclave'
     }
 
+    // Start listening for incoming message events
+    self.addEventListener('message', ev => this.dispatcher.dispatch(ev))
+
     //   Extract magic cookie from URI hash, it should be the part before any
     // query parameters, which are prefixed with the ``?'' character
     let hparts = window.location.hash.slice(1).split('?')
@@ -225,11 +201,10 @@ export default class Vault {
 
     // Parse vault query parameters
     this.params = hashToParams(window.location)
+    console.info('VAULT: Parsed vault parameters:', this.params)
 
     // Strip params from URI fragment part
     //window.location.hash = hash.slice(0, hash.indexOf('?'))
-
-    console.info('VAULT: Parsed vault parameters:', this.params)
 
     // Iterate vault plugins configure phase.
     await this.plugin_exec('configure')
@@ -245,38 +220,23 @@ export default class Vault {
 
     console.info('VAULT: Starting up...')
 
-    // Iterate vault plugins startup phase.
-    await this.plugin_exec('startup')
+    // Iterate vault plugins startup phase and collect promises.
+    let promises = []
+    await this.plugin_exec('startup', promises)
 
-    if (this.mode === 'enclave') {
-      // Webkit ITP 2.0 Support
-      //XXX: Not happy about this being here. Move to plugin
-      if (document.hasStorageAccess !== undefined) {
-        console.info('VAULT: ITP-2.0: browser support detected, checking storage status.')
-        return document.hasStorageAccess()
-          .then(
-            async function (r) {
-              if (r === false) {
-                console.info('VAULT: ITP-2.0: Vault does not have storage access.')
-                parent.postMessage({login: null}, '*')
-                return Promise.resolve()
-              }
-
-              // Post vault ready.
-              console.info('VAULT: ITP-2.0: Vault has storage access.')
-              parent.postMessage({ready: await this.isSetup()}, '*')
-              return Promise.resolve()
-            }.bind(this),
-            e => {
-              console.error('VAULT: ITP-2.0: hasStorageAccess:', e)
-              parent.postMessage({error: 'ITP-2.0'})
-              return Promise.reject(e)
-            }
-          )
-      }
-
-      window.top.postMessage({ready: await this.isSetup()}, '*')
-    }
+    //   Wait for plugins that registered a future to complete before sending
+    // ready message.
+    Promise.all(promises)
+      .then(async function() {
+        if (this.mode !== 'enclave') return
+        console.info('VAULT: Posting ready and waiting.')
+        parent.postMessage({ready: await this.isSetup()}, '*')
+      }.bind(this))
+      .catch(e => {
+        if (this.mode !== 'enclave') return
+        console.warn('VAULT: Posting not-ready condition:', e)
+        parent.postMessage(e, '*')
+      })
   }
 
   /**
@@ -913,34 +873,6 @@ export default class Vault {
     }
 
     throw 'Invalid argument, expecting Array or MessageDispatch interface.'
-  }
-
-  /**
-   * MessageDispatch Reactor
-   */
-  async dispatch (event) {
-    // ITP-2.0
-    // Called by parent when the user presses the "Zippie Signin" button.
-    //XXX: Not happy about this being here.
-    if ('login' in event.data) {
-      return requestStorage()
-        .then(function (r) {
-          event.source.postMessage({
-            callback: event.data.callback,
-            result: r
-          }, event.origin)
-        })
-        .catch(e => {
-          console.error('VAULT: ITP-2.0 REQUEST FAILURE.')
-          event.source.postMessage({
-            callback: event.data.callback,
-            error: 'ITP_REQUEST_FAILURE'
-          }, event.origin)
-        })
-    }
-
-    // Pass through to message dispatcher
-    this.dispatcher.dispatch(event)
   }
 }
 
