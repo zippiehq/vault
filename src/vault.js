@@ -37,6 +37,8 @@ import eccrypto from 'eccrypto'
 import HDKey from 'hdkey'
 import secrets from 'secrets.js-grempe'
 
+import { detectDeviceName } from './utils'
+
 // vault database contains:
 // cache of app hash -> app-pubex
 // device local private key
@@ -606,8 +608,11 @@ export default class Vault {
     this.store.setItem('localslice_e', JSON.stringify(cipher1))
     this.store.setItem('isSetup', true)
 
+    // Auto-Generate device name/label
+    let deviceName = detectDeviceName() || localpub.toString('hex').slice(-8)
+
     console.info('VAULT: Creating enrollment registry')
-    await this.enroll('device', localpub.toString('hex').slice(-8), localpub.toString('hex'))
+    await this.enroll('device', deviceName, localpub.toString('hex'), { userAgent: navigator.userAgent })
 
     if (params['name']) {
       this.store.setItem('user.name', params['name'])
