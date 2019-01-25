@@ -77,7 +77,7 @@ export default class {
         .then(function () {
           let opts
           if (this.vault.params.itp) opts = { params: { itp: true } }
-          this.vault.launch(this.vault.params.launch, opts)
+          this.vault.launch(this.vault.params.signup, opts)
         }.bind(this))
       return
     }
