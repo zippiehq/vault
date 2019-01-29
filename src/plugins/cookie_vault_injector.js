@@ -64,7 +64,7 @@ export default class {
 
     if (magiccookie === undefined) {
       return resolve({
-        error: 'Vault magic cookie not supplied.',
+        error: 'VAULT_NO_MAGICCOOKIE',
         launch: window.location.href.split('#')[0]
       })
     }
@@ -80,7 +80,7 @@ export default class {
       console.info('No v-data cookie discovered, user needs to sign-in.')
 
       return resolve({
-        error: 'Vault data cookie undefined.',
+        error: 'VAULT_NO_DATACOOKIE',
         launch: window.location.href.split('#')[0]
       })
     }
@@ -114,6 +114,10 @@ export default class {
 
   /**
    * Vault plugin 'prelaunch' hook
+   * This function is called before vault launches a dapp, to setup
+   * corrosponding magic and data cookies.
+   * 
+   * XXX - We need to keep a list of dapps, so we can manage them in the future.
    */
   async prelaunch (uri, opts) {
     if (this.vault.mode !== 'root') return
