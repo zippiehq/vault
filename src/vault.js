@@ -126,6 +126,10 @@ export default class Vault {
     ])
   }
 
+  /**
+   * Merge config data with that stored in localstorage and return.
+   * XXX - Should probably cache it in memory on load.
+   */
   get config () {
     let result = JSON.parse(JSON.stringify(this._config))
     for (let i = 0; i < localStorage.length; i++) {
@@ -321,14 +325,14 @@ export default class Vault {
   async __getMasterSeed () {
     if (!await this.isSetup()) {
       console.log('VAULT: Vault has no identity!')
-      return null
+      return Promise.reject('VAULT_LOCAL_IDENTITY_ERROR')
     }
 
     // Authkey used to index remote slice from FMS
     let authkey = this.store.getItem('authkey')
     if (!authkey) {
       console.error('VAULT: Failed to retrieve authkey from store.')
-      return null
+      return Promise.reject('VAULT_LOCAL_IDENTITY_ERROR')
     }
 
     // Translate hex encoded key to Buffer instance.
@@ -342,14 +346,14 @@ export default class Vault {
       console.error('VAULT: Failed to retrieve remote slice')
       // XXX: Need a better way of invalidating after revokation.
       this.store.clear()
-      return null
+      return Promise.reject('VAULT_REMOTE_IDENTITY_ERROR')
     }
 
     // Retrieve localkey from store for decrypting remote slice from FMS
     let localkey = this.store.getItem('localkey')
     if (!localkey) {
       console.error('VAULT: Failed to retrieve localkey from store')
-      return null
+      return Promise.reject('VAULT_LOCAL_IDENTITY_ERROR')
     }
 
     // Translate hex encoded key to Buffer instance.
@@ -369,7 +373,7 @@ export default class Vault {
     let lcipher = await this.store.getItem('localslice_e')
     if (!lcipher) {
       console.error('VAULT: Failed to retrieve localslice from store')
-      return null
+      return Promise.reject('VAULT_LOCAL_IDENTITY_ERROR')
     }
 
     //XXX: Fix in identity migration code.
@@ -379,7 +383,7 @@ export default class Vault {
       lcipher = JSON.parse(lcipher)
     } catch (e) {
       console.error('VAULT: Failed to parse localslice JSON:', e)
-      return null
+      return Promise.reject('VAULT_LOCAL_IDENTITY_ERROR')
     }
 
     // Translate hex encoded values to Buffer instances.
@@ -431,7 +435,7 @@ export default class Vault {
   async derive (hash, seed) {
     if (!seed && !await this.isSetup()) {
       console.info('VAULT: Vault has no identity!')
-      return null
+      return Promise.reject('VAULT_LOCAL_IDENTITY_ERROR')
     }
 
     function op (seed) {
@@ -462,7 +466,7 @@ export default class Vault {
   async pubex (key) {
     if (!await this.isSetup()) {
       console.info('VAULT: Vault has no identity!')
-      return null
+      return Promise.reject('VAULT_LOCAL_IDENTITY_ERROR')
     }
 
     let hash = (typeof key === 'string') ? shajs('sha256').update(key).digest() : key
@@ -477,7 +481,7 @@ export default class Vault {
   async privex (key) {
     if (!await this.isSetup()) {
       console.info('VAULT: Vault has no identity!')
-      return null
+      return Promise.reject('VAULT_LOCAL_IDENTITY_ERROR')
     }
 
     let hash = (typeof key === 'string') ? shajs('sha256').update(key).digest() : key
@@ -553,6 +557,7 @@ export default class Vault {
     console.info('VAULT: Creating enrollment registry')
     await this.enroll('device', deviceName, localpub.toString('hex'), { userAgent: navigator.userAgent })
 
+    // XXX Refactor
     if (params['name']) {
       this.store.setItem('user.name', params['name'])
       await this.userdata.set.bind(this)({userdata: { set: {key: 'user.name', value: params['name']}}})
