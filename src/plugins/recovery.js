@@ -132,13 +132,20 @@ export default class {
     let cipher = params.recovery
     Object.keys(cipher).map(k => { cipher[k] = Buffer.from(cipher[k], 'hex') })
 
-    let masterseed = await eccrypto.decrypt(enckey, cipher)
-    console.log(masterseed)
+    let masterseed
+    try {
+      masterseed = await eccrypto.decrypt(enckey, cipher)
+    } catch (e) {
+      return Promise.reject('VAULT_ERROR_RECOVERY_DECRYPT')
+    }
 
     return this.initidentity(masterseed)
       .then(function () {
         return this.launch(this.config.apps.user.home)
       }.bind(this))
+      .catch(e => {
+        return Promise.reject('VAULT_ERROR_INIT_IDENTITY')
+      })
   }
 
   /**
