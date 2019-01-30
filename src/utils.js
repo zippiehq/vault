@@ -32,7 +32,7 @@ export function hashToParams (uri) {
     let qparts = query.split(';')
     for (let i = 0; i < qparts.length; i++) {
       let kv = qparts[i].split('=')
-      params[kv[0]] = kv[1] || true
+      params[kv[0]] = kv[1] ? (decodeURI(kv[1])) : true
     }
   }
 
