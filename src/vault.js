@@ -296,7 +296,7 @@ export default class Vault {
       return new Promise(function (resolve) {
         window.addEventListener('message', function (event) {
           if (event.source !== iframe.contentWindow) return
-          if ('finished' in event.data) resolve()
+          if ('finished' in event.data) resolve(event.data.finished)
         })
       })
 
