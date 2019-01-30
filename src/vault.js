@@ -341,12 +341,17 @@ export default class Vault {
     authkey = Buffer.from(authkey, 'hex')
 
     // Retrieve encrypted remote slice from FMS
-    let rcipher = await this.fms.fetch(authkey)
-    if (!rcipher) {
-      console.error('VAULT: Failed to retrieve remote slice')
-      // XXX: Need a better way of invalidating after revokation.
-      this.store.clear()
-      return Promise.reject('VAULT_REMOTE_IDENTITY_ERROR')
+    let rcipher
+    try {
+      rcipher = await this.fms.fetch(authkey)
+      if (!rcipher) {
+        console.error('VAULT: Failed to retrieve remote slice')
+        // XXX: Need a better way of invalidating after revokation.
+        this.store.clear()
+        return Promise.reject('VAULT_REMOTE_IDENTITY_ERROR')
+      }
+    } catch (e) {
+      return Promise.reject('VAULT_FMS_OFFLINE')
     }
 
     // Retrieve localkey from store for decrypting remote slice from FMS
