@@ -164,6 +164,11 @@ export default class {
           }
 
           let recovery = await this.vault.fms.fetch(authkey)
+
+          if (recovery === null) {
+            return Promise.reject("Unable to obtain recovery data from FMS.")
+          }
+
           recovery = Buffer.from(JSON.stringify(recovery), 'ascii').toString('hex')
 
           // Process signup parameters.
@@ -177,6 +182,9 @@ export default class {
         .then(function () {
           return this.vault.launch(this.vault.config.apps.user.home)
         }.bind(this))
+        .catch(function (e) {
+          return alert(e)
+        })
     }
 
     // https://vault.zippie.org/#?card=v
