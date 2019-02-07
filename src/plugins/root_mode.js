@@ -105,6 +105,10 @@ export default class {
           delete params['signup_page']
         }
 
+        if (this.vault.params.launch) {
+          params['signup_launch'] = this.vault.params.launch
+        }
+
         this.vault.launch(this.vault.config.apps.root.signup + path, { root: true, params: params })
           .then(function () {
             let opts
@@ -180,7 +184,13 @@ export default class {
           return this.vault.launch(this.vault.config.apps.root.signup + '/#/recover/auth/' + salt + '/' + recovery, { root: true, params: params })
         }.bind(this))
         .then(function () {
-          return this.vault.launch(this.vault.config.apps.user.home)
+          let redirectTo = this.vault.config.apps.user.home
+
+          if (this.vault.params.app) {
+            redirectTo = this.vault.params.app
+          }
+
+          return this.vault.launch(redirectTo)
         }.bind(this))
         .catch(function (e) {
           return alert(e)
