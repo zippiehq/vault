@@ -249,9 +249,10 @@ export default class Vault {
    * token and pass them to user application for automatic signin.
    */
   async launch (uri, opts) {
+    opts = opts || {}
+
     // Decompose URI for parameter injection
     let host = uri.split('#')[0]
-
     let hash = uri.split('#')[1]
     hash = (hash || '').split('?')[0]
 
@@ -260,13 +261,12 @@ export default class Vault {
 
     // If we want to launch user app, we need to get pubex before we serialize
     // below parameters, so we can pass the cookie through to the dapp.
-    if (!opts || !opts.root) {
+    if (!opts.root) {
       await this.plugin_exec('prelaunch', uri, opts)
-      params['vault-cookie'] = this.magiccookie
     }
 
     // Inject specified parameters from provided opts into target params
-    if (opts && opts.params) params = Object.assign(params, opts.params)
+    if (opts.params) params = Object.assign(params, opts.params)
 
     // Recombine params into paramstr for URI building
     let paramstr = ''
@@ -279,7 +279,8 @@ export default class Vault {
     uri = host + (hash.length > 0 ? '#' + hash : '')
 
     // Check to see if we're opening a root app.
-    if (opts && opts.root) {
+    // XXX - Need to check, currently we can run multiple simultaneously!
+    if (opts.root) {
       console.info('VAULT: Loading vault application:', uri)
 
       let iframe = document.createElement('iframe')

@@ -155,7 +155,8 @@ export default class {
     let bs = cipher.update(data)
     let be = cipher.final()
 
-    this.vault.magiccookie = cookie.toString('hex')
+    opts.params = opts.params || {}
+    opts.params['vault-cookie'] = cookie.toString('hex')
 
     console.info('VAULT: Setting vault data injection cookie.')
     Cookie.set(
