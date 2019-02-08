@@ -20,9 +20,9 @@
  * SOFTWARE.
  *
  */
-import crypto from 'crypto'
 import secp256k1 from 'secp256k1'
 import bs58 from 'bs58'
+import { decrypt } from '../utils'
 
 /**
  * Vault "Root" Mode Plugin
@@ -253,47 +253,30 @@ export default class {
         .then(async function (r) {
 
         // USE OTP TO GET MASTERSEED FROM FMS
-        let key = Buffer.from(this.vault.params['import'], 'hex')
+        const key = this.vault.params['import'].length == 44 ?
+            bs58.decode(this.vault.params['import']) :
+            Buffer.from(this.vault.params['import'], 'hex')
+
         let ciphertext = await this.vault.fms.fetch(key)
         if (!ciphertext) {
           console.error('VAULT: Failed to retreive OTP masterseed from FMS.')
           return
         }
 
-        ciphertext = Buffer.from(ciphertext, 'hex')
-
-        let promise = new Promise(function (resolve, reject) {
-          const aeskey = key.slice(0,16)
-          const aesiv  = key.slice(16,32)
-          const cipher = crypto.createDecipheriv('aes-128-cbc', aeskey, aesiv)
-
-          let text = ''
-          cipher.on('readable', _ => {
-            const data = cipher.read()
-            if (data) text += data.toString('ascii')
-          })
-
-          cipher.on('end', _ => {
-            resolve(text)
-          })
-
-          cipher.write(ciphertext)
-          cipher.end()
-        })
-
         // REVOKE OTP
-        let authpub = secp256k1.publicKeyCreate(key, false)
-        let revokekey = secp256k1.ecdh(authpub, key)
+        console.info('VAULT: Attempting to remove one-time recovery data.')
+        const authpub = secp256k1.publicKeyCreate(key, false)
+        const revokekey = secp256k1.ecdh(authpub, key)
+        await this.vault.fms.revoke(revokekey)
 
-        return promise
+        console.info('VAULT: Decrypting masterseed')
+        ciphertext = Buffer.from(ciphertext, 'hex')
+        return decrypt(ciphertext, key.slice(0, 16), key.slice(16,32))
           .then(function (masterseed) {
             return this.vault.initidentity(Buffer.from(masterseed, 'hex'))
           }.bind(this))
           .then(function () {
-            console.info('VAULT: Attempting to remove one-time recovery data.')
-            return this.vault.fms.revoke(revokekey)
-          }.bind(this))
-          .then(function () {
+            // XXX - Handle specifying target application.
             this.vault.launch(this.vault.config.apps.user.home)
           }.bind(this))
       }.bind(this))

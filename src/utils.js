@@ -20,6 +20,48 @@
  * SOFTWARE.
  *
  */
+import Crypto from 'crypto'
+
+export function encrypt (data, key, iv) {
+  const cipher = Crypto.createCipheriv('aes-128-cbc', key, iv)
+
+  return new Promise(function (resolve) {
+    let result = new Buffer(0)
+
+    cipher.on('readable', function () {
+      const data = cipher.read()
+      if (data) result = Buffer.concat([result, data])
+    })
+
+    cipher.on('end', function () {
+      resolve(result)
+    })
+
+    cipher.write(data)
+    cipher.end()
+  })
+}
+
+export function decrypt (ciphertext, key, iv) {
+  const cipher = Crypto.createDecipheriv('aes-128-cbc', key, iv)
+
+  return new Promise(function (resolve) {
+    let result = new Buffer(0)
+
+    cipher.on('readable', function () {
+      const data = cipher.read()
+      if (data) Buffer.concat([result, data])
+    })
+
+    cipher.on('end', function () {
+      resolve(result)
+    })
+
+    cipher.write(ciphertext)
+    cipher.end()
+  })
+}
+
 export function hashToParams (uri) {
   let parser = document.createElement('a')
   parser.href = uri
