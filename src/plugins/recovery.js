@@ -21,9 +21,11 @@
  *
  */
 import Crypto from 'crypto'
+import bs58 from 'bs58'
 import shajs from 'sha.js'
 import secp256k1 from 'secp256k1'
 import eccrypto from 'eccrypto'
+import { encrypt } from '../utils'
 
 /**
  * Vault Recovery Actions Provider Plugin
@@ -41,39 +43,27 @@ export default class {
    * Generates a recovery importable via "import" root mode query handler.
    * This is meant for debugging purposes, there is no passphrase security
    * for this generated recovery. The "import" root mode query handler will
-   * destroy this recovery data when it successfully recovers the identity.
+   * destroy this recovery data when it first obtains this data from FMS.
    */
   async export (ev) {
-    let req = ev.data
+    const req = ev.data
 
     return await this.withMasterSeed(async function (masterseed) {
-      let authkey = Crypto.randomBytes(32)
+      const authkey = Crypto.randomBytes(32)
 
-      let authpub = secp256k1.publicKeyCreate(authkey, false)
-      let revokekey = secp256k1.ecdh(authpub, authkey)
-      let revokepub = secp256k1.publicKeyCreate(revokekey, false)
+      const authpub = secp256k1.publicKeyCreate(authkey, false)
+      const revokekey = secp256k1.ecdh(authpub, authkey)
+      const revokepub = secp256k1.publicKeyCreate(revokekey, false)
 
-      let promise = new Promise(function (resolve, reject) {
-        let aeskey = authkey.slice(0,16)
-        let aesiv = authkey.slice(16,32)
-        let cipher = Crypto.createCipheriv('aes-128-cbc', aeskey, aesiv)
-
-        let result = ''
-        cipher.on('readable', _ => {
-          const data = cipher.read()
-          if (data) result += data.toString('hex')
+      return encrypt(masterseed.toString('hex'),
+          authkey.slice(0, 16),
+          authkey.slice(16, 32)
+        )
+        .then(r => this.fms.store(authpub, revokepub, r.toString('hex')))
+        .then(r => bs58.encode(authkey))
+        .catch(e => {
+          console.error('Failed to export identity.')
         })
-        cipher.on('end', _ => {
-          resolve(result)
-        })
-
-        cipher.write(masterseed.toString('hex'))
-        cipher.end()
-      })
-
-      return promise
-        .then(r => this.fms.store(authpub, revokepub, r))
-        .then(r => authkey.toString('hex'))
     }.bind(this))
   }
 
