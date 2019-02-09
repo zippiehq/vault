@@ -79,7 +79,7 @@ export default class {
     if (data === undefined) {
       console.info('No v-data cookie discovered, user needs to sign-in.')
 
-      return resolve({
+      return reject({
         error: 'VAULT_NO_DATACOOKIE',
         launch: window.location.href.split('#')[0]
       })
@@ -97,11 +97,20 @@ export default class {
     // Decrypt vault data parcel.
     console.info('VAULT: Decrypting vault data injection cookie.')
     let cipher = Crypto.createDecipheriv('aes-256-cbc', key, iv)
-    let bs = cipher.update(text)
-    let be = cipher.final()
+    let result = new Buffer(0)
+
+    try {
+      result = Buffer.concat([result, cipher.update(text)])
+      result = Buffer.concat([result, cipher.final()])
+    } catch(e) {
+      return reject({
+        error: 'VAULT_DECRYPT_DATACOOKIE_ERROR',
+        launch: window.location.href.split('#')[0]
+      })
+    }
 
     // Parse vault data JSON from decrypted plain text
-    let vdata = JSON.parse(Buffer.concat([bs, be]).toString('utf8'))
+    let vdata = JSON.parse(result.toString('utf8'))
 
     // Inject decrypted data to vault storage.
     for (let k in vdata) {
@@ -109,7 +118,7 @@ export default class {
       this.vault.store.setItem(k, vdata[k])
     }
 
-    return resolve()
+    return resolve(true)
   }
 
   /**
