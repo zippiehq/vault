@@ -95,7 +95,6 @@ export default class Vault {
     // Vault execution mode (host|enclave)
     this.mode = undefined
     this.params = {}
-    this.magiccookie = undefined
 
     // Memcache for user application pubex cookies
     this._pubex = {}
@@ -181,9 +180,6 @@ export default class Vault {
     this.permastore = new Permastore(this.config.apis.permastore)
     this.mailbox = new Mailbox(this.config.apis.mailbox)
 
-    // Iterate vault plugins install phase.
-    await this.plugin_exec('install', this)
-
     // Check to see if we're running in root mode.
     if (window.top === window.self) {
       console.info('VAULT: Running in root mode.')
@@ -195,24 +191,18 @@ export default class Vault {
       this.mode = 'enclave'
     }
 
-    // Start listening for incoming message events
-    self.addEventListener('message', ev => this.dispatcher.dispatch(ev))
-
-    //   Extract magic cookie from URI hash, it should be the part before any
-    // query parameters, which are prefixed with the ``?'' character
-    let hparts = window.location.hash.slice(1).split('?')
-    this.magiccookie = hparts[0]
-
     // Parse vault query parameters
     this.params = hashToParams(window.location)
     console.info('VAULT: Parsed vault parameters:', this.params)
 
-    // Strip params from URI fragment part
-    //window.location.hash = hash.slice(0, hash.indexOf('?'))
+    // Iterate vault plugins install phase.
+    await this.plugin_exec('install', this)
+
+    // Start listening for incoming message events
+    self.addEventListener('message', ev => this.dispatcher.dispatch(ev))
 
     // Iterate vault plugins configure phase.
     await this.plugin_exec('configure')
-
     this._isConfigured = true
   }
 
