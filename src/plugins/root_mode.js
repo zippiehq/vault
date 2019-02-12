@@ -170,7 +170,8 @@ export default class {
           let recovery = await this.vault.fms.fetch(authkey)
 
           if (recovery === null) {
-            return Promise.reject("Unable to obtain recovery data from FMS.")
+            alert('Unable to download recovery data.')
+            return
           }
 
           recovery = Buffer.from(JSON.stringify(recovery), 'ascii').toString('hex')
