@@ -699,6 +699,20 @@ export default class Vault {
     return true
   }
 
+  async getDeviceInfo (ev) {
+    let digest = shajs('sha256').update(ev.origin)
+    let localkey = this.store.getItem('localkey')
+
+    if (localkey[0] === '"') localkey = JSON.parse(localkey)
+    localkey = Buffer.from(localkey, 'hex')
+
+    return {
+      deviceId: digest
+          .update(secp256k1.publicKeyCreate(localkey, false))
+          .digest().toString('hex')
+    }
+  }
+
   /**
    *
    */
@@ -841,6 +855,8 @@ export default class Vault {
     if ('version' in req) return this.getVersion
     if ('config' in req) return this.getConfig
     if ('setConfig' in req) return this.setConfig
+
+    if ('getDeviceInfo' in req) return this.getDeviceInfo
 
     if ('reboot' in req) return this.reboot
 
