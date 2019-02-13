@@ -27,6 +27,7 @@
 export default class {
   install (vault) {
     this.vault = vault
+    vault.addReceiver(this)
   }
 
   startup (promises) {
@@ -76,7 +77,7 @@ export default class {
 
   dispatchTo (context, ev) {
     if ('login' in ev.data) {
-      return this.requestStorage()
+      this.requestStorage()
         .then(function (r) {
           ev.source.postMessage({
             callback: ev.data.callback,
@@ -90,7 +91,8 @@ export default class {
             error: 'ITP_REQUEST_FAILURE'
           }, ev.origin)
         })
-  
     }
+
+    return null
   }
 }
