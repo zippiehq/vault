@@ -79,7 +79,6 @@ export default class {
     const authpub = secp256k1.publicKeyConvert(authkey.publicKey, false)
 
     let cipher = await this.fms.fetch(authkey.privateKey)
-    console.log(cipher)
     if (!cipher) {
       console.warn('VAULT: Failed to retrieve user data:', req.key)
       return null
