@@ -20,9 +20,9 @@
  * SOFTWARE.
  *
  */
-import crypto from 'crypto'
 import secp256k1 from 'secp256k1'
 import bs58 from 'bs58'
+import { decrypt } from '../utils'
 
 /**
  * Vault "Root" Mode Plugin
@@ -64,19 +64,20 @@ export default class {
       // Process signup parameters.
       let params = { }
       Object.keys(this.vault.params).forEach(k => {
-        if (k.startsWith('signup')) params[k] = this.vault.params[k]
+        if (k.startsWith('signup_')) params[k] = this.vault.params[k]
       })
 
       let path = ''
       if ('signup_page' in params) {
         path = '/#' + params['signup_page']
+        delete params['signup_page']
       }
 
       this.vault.launch(this.vault.config.apps.root.signup + path, { root: true, params: params })
         .then(function () {
           let opts
           if (this.vault.params.itp) opts = { params: { itp: true } }
-          this.vault.launch(this.vault.params.launch, opts)
+          this.vault.launch(this.vault.params.signup, opts)
         }.bind(this))
       return
     }
@@ -95,12 +96,17 @@ export default class {
         // Process signup parameters.
         let params = { }
         Object.keys(this.vault.params).forEach(k => {
-          if (k.startsWith('signup')) params[k] = this.vault.params[k]
+          if (k.startsWith('signup_')) params[k] = this.vault.params[k]
         })
 
         let path = ''
         if ('signup_page' in params) {
           path = '/#' + params['signup_page']
+          delete params['signup_page']
+        }
+
+        if (this.vault.params.launch) {
+          params['signup_launch'] = this.vault.params.launch
         }
 
         this.vault.launch(this.vault.config.apps.root.signup + path, { root: true, params: params })
@@ -129,40 +135,67 @@ export default class {
 
     // https://vault.zippie.org#?recover=v
     if ('recover' in this.vault.params) {
-      if (await this.vault.isSetup() && !confirm('Do you really want to import identity?')) {
-        return
+      let promise = Promise.resolve(true)
+
+      // If we already have an identity, show the signup recovery confirmation
+      // page and wait for response from user.
+      if (await this.vault.isSetup()) {
+        let params = {
+          heading: 'You already have an identity!',
+          message: 'Are you sure you want to overwrite by recovering new identity?' }
+
+        promise = this.vault.launch(this.vault.config.apps.root.signup + '/#/confirm', { root: true, params: params })
       }
 
-      let authkey, salt
+      // On successful resolution decode recovery data and load signup recovery
+      return promise
+        .then(async function (r) {
+          if (!r) return
 
-      // Decode hex encoded ':' delimited recovery data.
-      if (this.vault.params.recover.indexOf(':') > -1) {
-        let parts = this.vault.params.recover.split(':')
-        salt = parts[0]
-        authkey = Buffer.from(parts[1], 'hex')
+          let authkey, salt
 
-      // Decode base58 encoded recovery data
-      } else if (this.vault.params.recover.length === 88) {
-        let buff = bs58.decode(this.vault.params.recover)
-        salt = buff.slice(0, 32).toString('hex')
-        authkey = buff.slice(32)
-      }
+          // Decode hex encoded ':' delimited recovery data.
+          if (this.vault.params.recover.indexOf(':') > -1) {
+            let parts = this.vault.params.recover.split(':')
+            salt = parts[0]
+            authkey = Buffer.from(parts[1], 'hex')
 
-      let recovery = await this.vault.fms.fetch(authkey)
-      recovery = Buffer.from(JSON.stringify(recovery), 'ascii').toString('hex')
+          // Decode base58 encoded recovery data
+          } else if (this.vault.params.recover.length === 88) {
+            let buff = bs58.decode(this.vault.params.recover)
+            salt = buff.slice(0, 32).toString('hex')
+            authkey = buff.slice(32)
+          }
 
-      // Process signup parameters.
-      let params = { }
-      Object.keys(this.vault.params).forEach(k => {
-        if (k.startsWith('signup')) params[k] = this.vault.params[k]
-      })
+          let recovery = await this.vault.fms.fetch(authkey)
 
-      this.vault.launch(this.vault.config.apps.root.signup + '/#/recover/auth/' + salt + '/' + recovery, { root: true, params: params })
-        .then(function () {
-          this.vault.launch(this.vault.params.launch)
+          if (recovery === null) {
+            alert('Unable to download recovery data.')
+            return
+          }
+
+          recovery = Buffer.from(JSON.stringify(recovery), 'ascii').toString('hex')
+
+          // Process signup parameters.
+          let params = { }
+          Object.keys(this.vault.params).forEach(k => {
+            if (k.startsWith('signup_')) params[k] = this.vault.params[k]
+          })
+
+          return this.vault.launch(this.vault.config.apps.root.signup + '/#/recover/auth/' + salt + '/' + recovery, { root: true, params: params })
         }.bind(this))
+        .then(function () {
+          let redirectTo = this.vault.config.apps.user.home
 
-      return
+          if (this.vault.params.app) {
+            redirectTo = this.vault.params.app
+          }
+
+          return this.vault.launch(redirectTo)
+        }.bind(this))
+        .catch(function (e) {
+          return alert(e)
+        })
     }
 
     // https://vault.zippie.org/#?card=v
@@ -204,55 +237,50 @@ export default class {
 
     // https://vault.zippie.org/#?import=v
     if ('import' in this.vault.params) {
-      if (await this.vault.isSetup() &&
-          !confirm('Do you really want to import identity?')) {
-        return
+      let promise = Promise.resolve(true)
+
+      // If we already have an identity, show the signup recovery confirmation
+      // page and wait for response from user.
+      if (await this.vault.isSetup()) {
+        let params = {
+          heading: 'You already have an identity!',
+          message: 'Are you sure you want to overwrite by recovering new identity?' }
+
+        promise = this.vault.launch(this.vault.config.apps.root.signup + '/#/confirm', { root: true, params: params })
       }
 
-      // USE OTP TO GET MASTERSEED FROM FMS
-      let key = Buffer.from(this.vault.params['import'], 'hex')
-      let ciphertext = await this.vault.fms.fetch(key)
-      if (!ciphertext) {
-        console.error('VAULT: Failed to retreive OTP masterseed from FMS.')
-        return
-      }
-
-      ciphertext = Buffer.from(ciphertext, 'hex')
-
-      let promise = new Promise(function (resolve, reject) {
-        const aeskey = key.slice(0,16)
-        const aesiv  = key.slice(16,32)
-        const cipher = crypto.createDecipheriv('aes-128-cbc', aeskey, aesiv)
-
-        let text = ''
-        cipher.on('readable', _ => {
-          const data = cipher.read()
-          if (data) text += data.toString('ascii')
-        })
-
-        cipher.on('end', _ => {
-          resolve(text)
-        })
-
-        cipher.write(ciphertext)
-        cipher.end()
-      })
-
-      // REVOKE OTP
-      let authpub = secp256k1.publicKeyCreate(key, false)
-      let revokekey = secp256k1.ecdh(authpub, key)
-
+      // On successful resolution decode recovery data and load signup recovery
       return promise
-        .then(function (masterseed) {
-          return this.vault.initidentity(Buffer.from(masterseed, 'hex'))
-        }.bind(this))
-        .then(function () {
-          console.info('VAULT: Attempting to remove one-time recovery data.')
-          return this.vault.fms.revoke(revokekey)
-        }.bind(this))
-        .then(function () {
-          this.vault.launch(this.vault.config.apps.user.home)
-        }.bind(this))
+        .then(async function (r) {
+
+        // USE OTP TO GET MASTERSEED FROM FMS
+        const key = this.vault.params['import'].length == 44 ?
+            bs58.decode(this.vault.params['import']) :
+            Buffer.from(this.vault.params['import'], 'hex')
+
+        let ciphertext = await this.vault.fms.fetch(key)
+        if (!ciphertext) {
+          console.error('VAULT: Failed to retreive OTP masterseed from FMS.')
+          return
+        }
+
+        // REVOKE OTP
+        console.info('VAULT: Attempting to remove one-time recovery data.')
+        const authpub = secp256k1.publicKeyCreate(key, false)
+        const revokekey = secp256k1.ecdh(authpub, key)
+        await this.vault.fms.revoke(revokekey)
+
+        console.info('VAULT: Decrypting masterseed')
+        ciphertext = Buffer.from(ciphertext, 'hex')
+        return decrypt(ciphertext, key.slice(0, 16), key.slice(16,32))
+          .then(function (masterseed) {
+            return this.vault.initidentity(Buffer.from(masterseed, 'hex'))
+          }.bind(this))
+          .then(function () {
+            // XXX - Handle specifying target application.
+            this.vault.launch(this.vault.config.apps.user.home)
+          }.bind(this))
+      }.bind(this))
     }
 
     alert('VAULT: ' + JSON.stringify(await this.vault.getVersion()))

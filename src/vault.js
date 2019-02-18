@@ -37,6 +37,8 @@ import eccrypto from 'eccrypto'
 import HDKey from 'hdkey'
 import secrets from 'secrets.js-grempe'
 
+import { hashToParams, detectDeviceName } from './utils'
+
 // vault database contains:
 // cache of app hash -> app-pubex
 // device local private key
@@ -46,31 +48,6 @@ import secrets from 'secrets.js-grempe'
 
 //TODO:
 //  - Local caching of pubex's
-//  - User data storing in vault (language preference, etc.)
-
-/**
- * Webkit ITP 2.0 Support
- */
-//XXX: Not happy about this being here.
-//     Move to plugin
-function requestStorage () {
-  return new Promise (function (resolve, reject) {
-    if (document.requestStorageAccess !== undefined) {
-      return document.requestStorageAccess()
-        .then(
-          function () {
-            console.log('ITP: Storage access granted!')
-            return resolve(true)
-          },
-          function () {
-            console.error('ITP: Storage access denied!')
-            return reject()
-          })
-    }
-
-    return resolve(true)
-  })
-}
 
 /**
  * Zippie Vault
@@ -118,7 +95,6 @@ export default class Vault {
     // Vault execution mode (host|enclave)
     this.mode = undefined
     this.params = {}
-    this.magiccookie = undefined
 
     // Memcache for user application pubex cookies
     this._pubex = {}
@@ -135,6 +111,7 @@ export default class Vault {
 
     // Import vault plugins
     this.install([
+      new (require('./plugins/itp_support.js')).default(),
       new (require('./plugins/cookie_vault_injector.js')).default(),
       new (require('./plugins/root_mode.js')).default(),
       new (require('./plugins/user_mode.js')).default(),
@@ -148,6 +125,10 @@ export default class Vault {
     ])
   }
 
+  /**
+   * Merge config data with that stored in localstorage and return.
+   * XXX - Should probably cache it in memory on load.
+   */
   get config () {
     let result = JSON.parse(JSON.stringify(this._config))
     for (let i = 0; i < localStorage.length; i++) {
@@ -199,12 +180,6 @@ export default class Vault {
     this.permastore = new Permastore(this.config.apis.permastore)
     this.mailbox = new Mailbox(this.config.apis.mailbox)
 
-    // Iterate vault plugins install phase.
-    await this.plugin_exec('install', this)
-
-    // Start listening for incoming message events
-    self.addEventListener('message', this.dispatch.bind(this))
-
     // Check to see if we're running in root mode.
     if (window.top === window.self) {
       console.info('VAULT: Running in root mode.')
@@ -216,27 +191,18 @@ export default class Vault {
       this.mode = 'enclave'
     }
 
-    let hparts = window.location.hash.slice(1).split('?')
-
-    this.magiccookie = hparts[0]
-
-    let query = hparts[1]
-    if (query !== undefined) {
-      let qparts = query.split(';')
-      for (let i = 0; i < qparts.length; i++) {
-        let kv = qparts[i].split('=')
-        this.params[kv[0]] = kv[1] || true
-      }
-
-      // Strip params from URI fragment part
-      //window.location.hash = hash.slice(0, hash.indexOf('?'))
-    }
-
+    // Parse vault query parameters
+    this.params = hashToParams(window.location)
     console.info('VAULT: Parsed vault parameters:', this.params)
+
+    // Iterate vault plugins install phase.
+    await this.plugin_exec('install', this)
+
+    // Start listening for incoming message events
+    self.addEventListener('message', ev => this.dispatcher.dispatch(ev))
 
     // Iterate vault plugins configure phase.
     await this.plugin_exec('configure')
-
     this._isConfigured = true
   }
 
@@ -248,38 +214,23 @@ export default class Vault {
 
     console.info('VAULT: Starting up...')
 
-    // Iterate vault plugins startup phase.
-    await this.plugin_exec('startup')
+    // Iterate vault plugins startup phase and collect promises.
+    let promises = []
+    await this.plugin_exec('startup', promises)
 
-    if (this.mode === 'enclave') {
-      // Webkit ITP 2.0 Support
-      //XXX: Not happy about this being here. Move to plugin
-      if (document.hasStorageAccess !== undefined) {
-        console.info('VAULT: ITP-2.0: browser support detected, checking storage status.')
-        return document.hasStorageAccess()
-          .then(
-            async function (r) {
-              if (r === false) {
-                console.info('VAULT: ITP-2.0: Vault does not have storage access.')
-                parent.postMessage({login: null}, '*')
-                return Promise.resolve()
-              }
-
-              // Post vault ready.
-              console.info('VAULT: ITP-2.0: Vault has storage access.')
-              parent.postMessage({ready: await this.isSetup()}, '*')
-              return Promise.resolve()
-            }.bind(this),
-            e => {
-              console.error('VAULT: ITP-2.0: hasStorageAccess:', e)
-              parent.postMessage({error: 'ITP-2.0'})
-              return Promise.reject(e)
-            }
-          )
-      }
-
-      window.top.postMessage({ready: await this.isSetup()}, '*')
-    }
+    //   Wait for plugins that registered a future to complete before sending
+    // ready message.
+    Promise.all(promises)
+      .then(async function() {
+        if (this.mode !== 'enclave') return
+        console.info('VAULT: Posting ready and waiting.')
+        parent.postMessage({ready: await this.isSetup()}, '*')
+      }.bind(this))
+      .catch(e => {
+        if (this.mode !== 'enclave') return
+        console.warn('VAULT: Posting not-ready condition:', e)
+        parent.postMessage(e, '*')
+      })
   }
 
   /**
@@ -288,43 +239,27 @@ export default class Vault {
    * token and pass them to user application for automatic signin.
    */
   async launch (uri, opts) {
+    opts = opts || {}
+
     // Decompose URI for parameter injection
     let host = uri.split('#')[0]
-
-    // Get URI hash, if there is one.
-    let hash = uri.split('#')[1] || ''
-    let paramstr = hash.split('?')[1] || ''
-
-    // Strip off paramstr
-    hash = hash.split('?')[0]
+    let hash = uri.split('#')[1]
+    hash = (hash || '').split('?')[0]
 
     // Collect hash parameters into params object.
-    let params = {}
-    let p = paramstr.split(';')
-
-    if (p[0] !== '') {
-      for (var i = 0; i < p.length; i++) {
-        let parts = p[i].split('=')
-        params[parts[0]] = parts[1]
-      }
-    }
+    let params = hashToParams(uri)
 
     // If we want to launch user app, we need to get pubex before we serialize
     // below parameters, so we can pass the cookie through to the dapp.
-    if (!opts || !opts.root) {
+    if (!opts.root) {
       await this.plugin_exec('prelaunch', uri, opts)
-      params['vault-cookie'] = this.magiccookie
     }
 
     // Inject specified parameters from provided opts into target params
-    if (opts && opts.params) {
-      Object.keys(opts.params).forEach(k => {
-        params[k] = opts.params[k]
-      })
-    }
+    if (opts.params) params = Object.assign(params, opts.params)
 
     // Recombine params into paramstr for URI building
-    paramstr = ''
+    let paramstr = ''
     Object.keys(params).forEach(k => {
       paramstr += (paramstr.length > 0 ? ';' : '') + k + '=' + params[k]
     })
@@ -334,7 +269,8 @@ export default class Vault {
     uri = host + (hash.length > 0 ? '#' + hash : '')
 
     // Check to see if we're opening a root app.
-    if (opts && opts.root) {
+    // XXX - Need to check, currently we can run multiple simultaneously!
+    if (opts.root) {
       console.info('VAULT: Loading vault application:', uri)
 
       let iframe = document.createElement('iframe')
@@ -351,7 +287,7 @@ export default class Vault {
       return new Promise(function (resolve) {
         window.addEventListener('message', function (event) {
           if (event.source !== iframe.contentWindow) return
-          if ('finished' in event.data) resolve()
+          if ('finished' in event.data) resolve(event.data.finished)
         })
       })
 
@@ -380,14 +316,14 @@ export default class Vault {
   async __getMasterSeed () {
     if (!await this.isSetup()) {
       console.log('VAULT: Vault has no identity!')
-      return null
+      return Promise.reject('VAULT_LOCAL_IDENTITY_ERROR')
     }
 
     // Authkey used to index remote slice from FMS
     let authkey = this.store.getItem('authkey')
     if (!authkey) {
       console.error('VAULT: Failed to retrieve authkey from store.')
-      return null
+      return Promise.reject('VAULT_LOCAL_IDENTITY_ERROR')
     }
 
     // Translate hex encoded key to Buffer instance.
@@ -396,19 +332,24 @@ export default class Vault {
     authkey = Buffer.from(authkey, 'hex')
 
     // Retrieve encrypted remote slice from FMS
-    let rcipher = await this.fms.fetch(authkey)
-    if (!rcipher) {
-      console.error('VAULT: Failed to retrieve remote slice')
-      // XXX: Need a better way of invalidating after revokation.
-      this.store.clear()
-      return null
+    let rcipher
+    try {
+      rcipher = await this.fms.fetch(authkey)
+      if (!rcipher) {
+        console.error('VAULT: Failed to retrieve remote slice')
+        // XXX: Need a better way of invalidating after revokation.
+        this.store.clear()
+        return Promise.reject('VAULT_REMOTE_IDENTITY_ERROR')
+      }
+    } catch (e) {
+      return Promise.reject('VAULT_FMS_OFFLINE')
     }
 
     // Retrieve localkey from store for decrypting remote slice from FMS
     let localkey = this.store.getItem('localkey')
     if (!localkey) {
       console.error('VAULT: Failed to retrieve localkey from store')
-      return null
+      return Promise.reject('VAULT_LOCAL_IDENTITY_ERROR')
     }
 
     // Translate hex encoded key to Buffer instance.
@@ -428,7 +369,7 @@ export default class Vault {
     let lcipher = await this.store.getItem('localslice_e')
     if (!lcipher) {
       console.error('VAULT: Failed to retrieve localslice from store')
-      return null
+      return Promise.reject('VAULT_LOCAL_IDENTITY_ERROR')
     }
 
     //XXX: Fix in identity migration code.
@@ -438,7 +379,7 @@ export default class Vault {
       lcipher = JSON.parse(lcipher)
     } catch (e) {
       console.error('VAULT: Failed to parse localslice JSON:', e)
-      return null
+      return Promise.reject('VAULT_LOCAL_IDENTITY_ERROR')
     }
 
     // Translate hex encoded values to Buffer instances.
@@ -490,7 +431,7 @@ export default class Vault {
   async derive (hash, seed) {
     if (!seed && !await this.isSetup()) {
       console.info('VAULT: Vault has no identity!')
-      return null
+      return Promise.reject('VAULT_LOCAL_IDENTITY_ERROR')
     }
 
     function op (seed) {
@@ -521,7 +462,7 @@ export default class Vault {
   async pubex (key) {
     if (!await this.isSetup()) {
       console.info('VAULT: Vault has no identity!')
-      return null
+      return Promise.reject('VAULT_LOCAL_IDENTITY_ERROR')
     }
 
     let hash = (typeof key === 'string') ? shajs('sha256').update(key).digest() : key
@@ -536,7 +477,7 @@ export default class Vault {
   async privex (key) {
     if (!await this.isSetup()) {
       console.info('VAULT: Vault has no identity!')
-      return null
+      return Promise.reject('VAULT_LOCAL_IDENTITY_ERROR')
     }
 
     let hash = (typeof key === 'string') ? shajs('sha256').update(key).digest() : key
@@ -606,9 +547,13 @@ export default class Vault {
     this.store.setItem('localslice_e', JSON.stringify(cipher1))
     this.store.setItem('isSetup', true)
 
-    console.info('VAULT: Creating enrollment registry')
-    await this.enroll('device', localpub.toString('hex').slice(-8), localpub.toString('hex'))
+    // Auto-Generate device name/label
+    let deviceName = detectDeviceName() || localpub.toString('hex').slice(-8)
 
+    console.info('VAULT: Creating enrollment registry')
+    await this.enroll('device', deviceName, localpub.toString('hex'), { userAgent: navigator.userAgent })
+
+    // XXX Refactor
     if (params['name']) {
       this.store.setItem('user.name', params['name'])
       await this.userdata.set.bind(this)({userdata: { set: {key: 'user.name', value: params['name']}}})
@@ -633,7 +578,7 @@ export default class Vault {
    * Registers a card or device to the users identity.
    */
   //XXX: Reimplement as a CRDT TwoPhaseSet
-  async enroll (type, name, deviceKey, signingKey) {
+  async enroll (type, name, deviceKey, props) {
     let registryhash = shajs('sha256').update('devices').digest()
     let registryauth = await this.derive(registryhash)
     let registryauthpub = secp256k1.publicKeyConvert(registryauth.publicKey, false)
@@ -644,7 +589,11 @@ export default class Vault {
     let enrollments = await this.enrollments()
 
     // Add new device to registry
-    enrollments.push({ type, name, deviceKey, signingKey, createdAt })
+    enrollments.push(
+        Object.assign({
+          type, name, deviceKey, createdAt
+        }, props)
+    )
 
     // Remove potential duplicates
     let keys = enrollments.map(i => i.deviceKey)
@@ -750,6 +699,20 @@ export default class Vault {
     return true
   }
 
+  async getDeviceInfo (ev) {
+    let digest = shajs('sha256').update(ev.origin)
+    let localkey = this.store.getItem('localkey')
+
+    if (localkey[0] === '"') localkey = JSON.parse(localkey)
+    localkey = Buffer.from(localkey, 'hex')
+
+    return {
+      deviceId: digest
+          .update(secp256k1.publicKeyCreate(localkey, false))
+          .digest().toString('hex')
+    }
+  }
+
   /**
    *
    */
@@ -802,8 +765,9 @@ export default class Vault {
     return []
   }
 
-  async setDeviceName (ev) {
-    let req = ev.data.setDeviceName
+  async setEnrollmentProperty (ev) {
+    let req = ev.data.setEnrollmentProperty
+    let prop = req.key
 
     let registryhash = shajs('sha256').update('devices').digest()
     let registryauth = await this.derive(registryhash)
@@ -815,8 +779,6 @@ export default class Vault {
     let device = enrollments.filter(v => v.deviceKey === req.deviceKey)[0]
     if (!device) return Promise.reject('Unable to find device in enrollments.')
 
-    if (device.type === 'uri') return Promise.reject('Unable to rename devices of type `uri`.')
-
     // Remove potential duplicates
     let keys = enrollments.map(i => i.deviceKey)
     enrollments = enrollments.filter((i, p) => {
@@ -824,7 +786,7 @@ export default class Vault {
     })
 
     enrollments = enrollments.map(i => {
-      if (i.deviceKey === req.deviceKey) i.name = req.name
+      if (i.deviceKey === req.deviceKey) i[prop] = req.value
       return i
     })
 
@@ -839,7 +801,19 @@ export default class Vault {
 
     console.info('VAULT: Uploading identity enrollment registry to permastore.')
     return await this.permastore.store(registryauth.privateKey, cipher)
+  }
 
+  async setDeviceName (ev) {
+    return this.setEnrollmentProperty({
+      callback: ev.data.callback,
+      data: {
+        setEnrollmentProperty: {
+          deviceKey: ev.data.setDeviceName.deviceKey,
+          key: 'name',
+          value: ev.data.setDeviceName.name
+        }
+      }
+    })
   }
 
   async enrollmentsReq () {
@@ -882,6 +856,8 @@ export default class Vault {
     if ('config' in req) return this.getConfig
     if ('setConfig' in req) return this.setConfig
 
+    if ('getDeviceInfo' in req) return this.getDeviceInfo
+
     if ('reboot' in req) return this.reboot
 
     if ('isSignedIn' in req) return this.isSignedInReq
@@ -889,6 +865,7 @@ export default class Vault {
     if ('signin' in req) return this.signin
 
     if ('enrollments' in req) return this.enrollmentsReq
+    if ('setEnrollmentProperty' in req) return this.setEnrollmentProperty
 
     if ('setDeviceName' in req) return this.setDeviceName
 
@@ -913,34 +890,6 @@ export default class Vault {
     }
 
     throw 'Invalid argument, expecting Array or MessageDispatch interface.'
-  }
-
-  /**
-   * MessageDispatch Reactor
-   */
-  async dispatch (event) {
-    // ITP-2.0
-    // Called by parent when the user presses the "Zippie Signin" button.
-    //XXX: Not happy about this being here.
-    if ('login' in event.data) {
-      return requestStorage()
-        .then(function (r) {
-          event.source.postMessage({
-            callback: event.data.callback,
-            result: r
-          }, event.origin)
-        })
-        .catch(e => {
-          console.error('VAULT: ITP-2.0 REQUEST FAILURE.')
-          event.source.postMessage({
-            callback: event.data.callback,
-            error: 'ITP_REQUEST_FAILURE'
-          }, event.origin)
-        })
-    }
-
-    // Pass through to message dispatcher
-    this.dispatcher.dispatch(event)
   }
 }
 

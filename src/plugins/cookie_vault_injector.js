@@ -64,7 +64,7 @@ export default class {
 
     if (magiccookie === undefined) {
       return resolve({
-        error: 'Vault magic cookie not supplied.',
+        error: 'VAULT_NO_MAGICCOOKIE',
         launch: window.location.href.split('#')[0]
       })
     }
@@ -79,8 +79,8 @@ export default class {
     if (data === undefined) {
       console.info('No v-data cookie discovered, user needs to sign-in.')
 
-      return resolve({
-        error: 'Vault data cookie undefined.',
+      return reject({
+        error: 'VAULT_NO_DATACOOKIE',
         launch: window.location.href.split('#')[0]
       })
     }
@@ -97,11 +97,20 @@ export default class {
     // Decrypt vault data parcel.
     console.info('VAULT: Decrypting vault data injection cookie.')
     let cipher = Crypto.createDecipheriv('aes-256-cbc', key, iv)
-    let bs = cipher.update(text)
-    let be = cipher.final()
+    let result = new Buffer(0)
+
+    try {
+      result = Buffer.concat([result, cipher.update(text)])
+      result = Buffer.concat([result, cipher.final()])
+    } catch(e) {
+      return reject({
+        error: 'VAULT_DECRYPT_DATACOOKIE_ERROR',
+        launch: window.location.href.split('#')[0]
+      })
+    }
 
     // Parse vault data JSON from decrypted plain text
-    let vdata = JSON.parse(Buffer.concat([bs, be]).toString('utf8'))
+    let vdata = JSON.parse(result.toString('utf8'))
 
     // Inject decrypted data to vault storage.
     for (let k in vdata) {
@@ -109,11 +118,15 @@ export default class {
       this.vault.store.setItem(k, vdata[k])
     }
 
-    return resolve()
+    return resolve(true)
   }
 
   /**
    * Vault plugin 'prelaunch' hook
+   * This function is called before vault launches a dapp, to setup
+   * corrosponding magic and data cookies.
+   * 
+   * XXX - We need to keep a list of dapps, so we can manage them in the future.
    */
   async prelaunch (uri, opts) {
     if (this.vault.mode !== 'root') return
@@ -151,7 +164,8 @@ export default class {
     let bs = cipher.update(data)
     let be = cipher.final()
 
-    this.vault.magiccookie = cookie.toString('hex')
+    opts.params = opts.params || {}
+    opts.params['vault-cookie'] = cookie.toString('hex')
 
     console.info('VAULT: Setting vault data injection cookie.')
     Cookie.set(

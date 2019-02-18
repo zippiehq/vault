@@ -123,7 +123,7 @@ export default class {
         'card',
         recoverypub.toString('hex').slice(-8),
         recoverypub.toString('hex'),
-        signingpub.toString('hex')
+        { signingKey: signingpub.toString('hex') }
       )
 
       return true

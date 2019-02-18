@@ -27,6 +27,7 @@ import secp256k1 from 'secp256k1'
 import eccrypto from 'eccrypto'
 import XMLHttpRequestPromise from 'xhr-promise'
 import bs58 from 'bs58'
+import { encrypt } from '../utils'
 
 /**
  * Vault Miscellaneous Actions Provider Plugin
@@ -75,24 +76,8 @@ export default class {
       key: pubex.toString('hex')
     }),'utf-8')
 
-    let promise = new Promise(function (resolve, reject) {
-      let cipher = crypto.createCipheriv('aes-128-cbc', key, iv)
 
-      let ciphertext = new Buffer(0)
-      cipher.on('readable', _ => {
-        let data = cipher.read()
-        if (data) ciphertext = Buffer.concat([ciphertext, data])
-      })
-
-      cipher.on('end', _ => {
-        resolve(ciphertext)
-      })
-
-      cipher.write(plaintext)
-      cipher.end()
-    })
-
-    return promise
+    return encrypt(plaintext, key, iv)
       .then(async function (r) {
         r = r.toString('hex')
         let req = {
