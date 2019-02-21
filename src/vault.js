@@ -490,9 +490,9 @@ export default class Vault {
    * Creates new vault identity.
    */
   // TODO: Move to devices plugin.
-  async newidentity (req) {
+  async newidentity (ev) {
     console.info('VAULT: Creating new identity.')
-    return await this.initidentity(Crypto.randomBytes(32), req.newidentity)
+    return await this.initidentity(Crypto.randomBytes(32), ev.data.newidentity)
   }
   
   /**
@@ -554,19 +554,20 @@ export default class Vault {
     await this.enroll('device', deviceName, localpub.toString('hex'), { userAgent: navigator.userAgent })
 
     // XXX Refactor
+    console.info('VAULT: Processing user parameters:', params)
     if (params['name']) {
       this.store.setItem('user.name', params['name'])
-      await this.userdata.set.bind(this)({userdata: { set: {key: 'user.name', value: params['name']}}})
+      await this.userdata.set.bind(this)({data: {userdata: { set: {key: 'user.name', value: params['name']}}}})
     }
 
     if (params['email']) {
       this.store.setItem('user.email', params['email'])
-      await this.userdata.set.bind(this)({userdata: { set: {key: 'user.email', value: params['email']}}})
+      await this.userdata.set.bind(this)({data: {userdata: { set: {key: 'user.email', value: params['email']}}}})
     }
 
     if (params['lang']) {
       this.store.setItem('user.lang', params['lang'])
-      await this.userdata.set.bind(this)({userdata: { set: {key: 'user.lang', value: params['lang']}}})
+      await this.userdata.set.bind(this)({data: {userdata: { set: {key: 'user.lang', value: params['lang']}}}})
     }
 
     console.info('VAULT: New identity created successfully!')
