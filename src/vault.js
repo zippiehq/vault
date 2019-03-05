@@ -553,22 +553,17 @@ export default class Vault {
     console.info('VAULT: Creating enrollment registry')
     await this.enroll('device', deviceName, localpub.toString('hex'), { userAgent: navigator.userAgent })
 
-    // XXX Refactor
+    // XXX Still need a better, more robust way to do this.
     console.info('VAULT: Processing user parameters:', params)
-    if (params['name']) {
-      this.store.setItem('user.name', params['name'])
-      await this.userdata.set.bind(this)({data: {userdata: { set: {key: 'user.name', value: params['name']}}}})
-    }
+    const passport = {}
 
-    if (params['email']) {
-      this.store.setItem('user.email', params['email'])
-      await this.userdata.set.bind(this)({data: {userdata: { set: {key: 'user.email', value: params['email']}}}})
-    }
+    if (params['name']) passport.fullname = params['name']
+    if (params['email']) passport.email = params['email']
+    if (params['lang']) passport.language = params['lang']
+    if (params['phone']) passport.phone = params['phone']
 
-    if (params['lang']) {
-      this.store.setItem('user.lang', params['lang'])
-      await this.userdata.set.bind(this)({data: {userdata: { set: {key: 'user.lang', value: params['lang']}}}})
-    }
+    console.info('VAULT: Uploading user passport data.')
+    await this.userdata.set.bind(this)({data: {userdata: { set: {key: 'passport', value: passport}}}})
 
     console.info('VAULT: New identity created successfully!')
     this._isSetup = true
