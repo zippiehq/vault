@@ -553,10 +553,19 @@ export default class Vault {
     console.info('VAULT: Creating enrollment registry')
     await this.enroll('device', deviceName, localpub.toString('hex'), { userAgent: navigator.userAgent })
 
+    let passport = {}
+
+    if ('recover' in this.params) {
+      console.info('VAULT: Attempting to get identity passport userdata.')
+      try {
+        passport = await this.userdata.get.bind(this)({data: {userdata: { get: {key: 'passport'}}}})
+      } catch (e) {
+        console.warn('VAULT: Failed to get passport userdata.')
+      }
+    }
+
     // XXX Still need a better, more robust way to do this.
     console.info('VAULT: Processing user parameters:', params)
-    const passport = {}
-
     if (params['name']) passport.fullname = params['name']
     if (params['email']) passport.email = params['email']
     if (params['lang']) passport.language = params['lang']

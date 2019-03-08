@@ -76,7 +76,6 @@ export default class {
     const masterkey = await this.derive(keyhash)
 
     const authkey = await masterkey.derive('m/0')
-    const authpub = secp256k1.publicKeyConvert(authkey.publicKey, false)
 
     let cipher = await this.fms.fetch(authkey.privateKey)
     if (!cipher) {
