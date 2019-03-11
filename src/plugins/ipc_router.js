@@ -20,6 +20,8 @@
  * SOFTWARE.
 */
 
+import * as utils from '../utils'
+
 /**
  * IPCRouter creates sub iframes and forwards messages
  * for the purpose of enabling secure communication between dapps
@@ -73,6 +75,7 @@ export default class IPCRouter {
     let req = event.data
     var params = req.IPCRouterRequest
 
+    console.info('[IPCRouter]: Attempting to launch API:', params)
     if(this._ipc_iframes[params.target] === undefined) {
 
       let isPermitted = true // FIXME
@@ -104,8 +107,34 @@ export default class IPCRouter {
       iframe.sandbox += ' allow-storage-access-by-user-activation'
       iframe.sandbox += ' allow-same-origin'
       iframe.sandbox += ' allow-scripts'
-  
-      iframe.src = params.target;
+
+      // Decompose URI for parameter injection
+      let uri = params.target
+      let host = uri.split('#')[0]
+      let hash = uri.split('#')[1]
+      hash = (hash || '').split('?')[0]
+
+      // Collect hash parameters into params object.
+      let appParams = utils.hashToParams(uri)
+
+      // Inject ipc-mode flag
+      appParams['ipc-mode'] = true
+
+      // Recombine params into paramstr for URI building
+      let paramstr = ''
+      Object.keys(appParams).forEach(k => {
+        if (typeof(appParams[k]) === 'boolean' && appParams[k]) {
+          paramstr += (paramstr.length > 0 ? ';' : '') + k
+        } else {
+          paramstr += (paramstr.length > 0 ? ';' : '') + k + '=' + appParams[k]
+        }
+      })
+
+      // Reconstitute full application URI
+      hash = hash + (paramstr.length > 0 ? '?' + paramstr : '')
+      uri = host + (hash.length > 0 ? '#' + hash : '')
+
+      iframe.src = uri
       document.body.appendChild(iframe)
   
       this._ipc_iframes[params.target] = iframe
