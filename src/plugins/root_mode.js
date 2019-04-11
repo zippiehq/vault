@@ -22,6 +22,7 @@
  */
 import secp256k1 from 'secp256k1'
 import bs58 from 'bs58'
+import Cookie from 'js-cookie'
 import { decrypt } from '../utils'
 
 /**
@@ -56,6 +57,11 @@ export default class {
     // https://vault.zippie.org/#?wipe
     if ('wipe' in this.vault.params && confirm('Do you really want to wipe Zippie Vault? This may cause data or money loss.') === true) {
       this.vault.store.clear()
+
+      Object.keys(Cookie.get())
+        .filter(k => k.startsWith('v-data-'))
+        .forEach(k => Cookie.remove(k))
+
       return
     }
 
