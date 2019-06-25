@@ -105,7 +105,6 @@ export default class IPCRouter {
       iframe.style.display = 'none'
   
       iframe.sandbox += ' allow-storage-access-by-user-activation'
-      iframe.sandbox += ' allow-same-origin'
       iframe.sandbox += ' allow-scripts'
 
       // Decompose URI for parameter injection
