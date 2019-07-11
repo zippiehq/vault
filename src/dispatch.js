@@ -118,7 +118,7 @@ export class MessageDispatcher {
         })
         .catch(e => {
           event.source.postMessage({
-            callback: event.data.callback, error: e
+            callback: event.data.callback, error: e.toString()
           },
           event.origin)
         })
