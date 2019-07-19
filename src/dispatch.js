@@ -117,10 +117,17 @@ export class MessageDispatcher {
           event.origin)
         })
         .catch(e => {
-          event.source.postMessage({
-            callback: event.data.callback, error: e.toString()
-          },
-          event.origin)
+          try { // Try to send error object, else stringify.
+            event.source.postMessage({
+              callback: event.data.callback, error: e
+            },
+            event.origin)
+          } catch (_) {
+            event.source.postMessage({
+              callback: event.data.callback, error: e.toString()
+            },
+            event.origin)
+          }
         })
     }
 
