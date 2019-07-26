@@ -852,6 +852,11 @@ export default class Vault {
   dispatchTo (context, event) {
     let req = event.data
 
+    if (typeof req !== 'object') {
+      console.warn('Unrecognised message format:', req)
+      return
+    }
+
     if (context.mode === 'root') { // ROOT-MODE ONLY RECEIVERS
       if ('launch' in req) return (function (req) { this.launch(req.launch.url, req.launch.opts) })
       if ('newidentity' in req) return this.newidentity
