@@ -103,6 +103,11 @@ export default class Vault {
     this._isConfigured = false
     this._isSetup = null
 
+    // Masterseed cache
+    this.__masterseed_cache = null
+    this.__masterseed_cache_timer_delay = 5000
+    this.__masterseed_cache_timer_id = null
+
     //   By using the masterseed transaction methods, we can ensure that any
     // nested uses of masterseed are handled correctly and only require a
     // single FMS request.
@@ -314,6 +319,14 @@ export default class Vault {
    * Pull remote slice and combine with local slice to generate masterseed.
    */
   async __getMasterSeed () {
+
+    // Look for cached masterseed
+    var masterseed = this.__masterseed_cache
+    if(masterseed) {
+      console.info('VAULT: Found cached masterseed')
+      return this.cacheMasterSeed(masterseed)
+    }
+
     if (!await this.isSetup()) {
       console.log('VAULT: Vault has no identity!')
       return Promise.reject('VAULT_LOCAL_IDENTITY_ERROR')
@@ -391,7 +404,29 @@ export default class Vault {
     let lslice = lslice_enc.toString('utf8')
 
     // Combine local and remote slices and return masterseed.
-    return Buffer.from(secrets.combine([lslice, rslice]), 'hex')
+    masterseed = Buffer.from(secrets.combine([lslice, rslice]), 'hex')
+
+    return this.cacheMasterSeed(masterseed)
+  }
+
+  /** 
+   * Cache masterseed for a limited time before destorying it with a timer
+   * */
+  cacheMasterSeed(masterseed) {
+    if(this.__masterseed_cache_timer_id) {
+      console.info('VAULT: Clear existing timer for cached masterseed', this.__masterseed_cache_timer_id)
+      clearTimeout(this.__masterseed_cache_timer_id)
+    }
+
+    this.__masterseed_cache_timer_id = setTimeout(() => { 
+      console.info('VAULT: Cached masterseed destroyed', this.__masterseed_cache_timer_id)
+      this.__masterseed_cache_timer_id = null
+      this.__masterseed_cache = null 
+    }, this.__masterseed_cache_timer_delay);
+    console.info('VAULT: Added new timer for cached masterseed', this.__masterseed_cache_timer_id)
+    
+    this.__masterseed_cache = masterseed 
+    return this.__masterseed_cache
   }
 
   /**
