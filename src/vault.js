@@ -123,6 +123,7 @@ export default class Vault {
       new (require('./plugins/secp256k1.js')).default(),
       new (require('./plugins/devices.js')).default(),
       new (require('./plugins/userdata.js')).default(),
+      new (require("./plugins/contactlist.js")).default(),
       new (require('./plugins/passcode.js')).default(),
       new (require('./plugins/recovery.js')).default(),
       new (require('./plugins/misc.js')).default(),
