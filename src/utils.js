@@ -21,6 +21,8 @@
  *
  */
 import Crypto from 'crypto'
+import { publicKeyConvert } from 'secp256k1'
+import zippieUtils from '@zippie/zippie-utils'
 
 export function encrypt (data, key, iv) {
   const cipher = Crypto.createCipheriv('aes-128-cbc', key, iv)
@@ -114,4 +116,39 @@ export function detectDeviceName () {
   }
 
   return deviceName
+}
+
+export async function fetchDataFromPermaStoreV2(keyInfo) {
+  const pubkey = pubkeyCompress(keyInfo.pubkey)
+  const list = await listPermaStoreV2(pubkey)
+  if (list.length > 0) {
+    const res = await fetchEncryptedEntryFromPermaStoreV2(list[list.length - 1])
+    return res
+  }
+  return
+}
+
+export function pubkeyCompress(pubkey) {
+  return publicKeyConvert(Buffer.from(pubkey, 'hex'), true).toString('hex')
+}
+
+export async function listPermaStoreV2(pubkey) {
+  console.log('listPermaStoreV2...' + pubkey)
+  return await zippieUtils.permastore.list(pubkey)
+}
+
+export async function fetchEntryFromPermaStoreV2( entry) {
+  return await zippieUtils.permastore.fetchEntry(entry)
+}
+
+export async function fetchEncryptedEntryFromPermaStoreV2(entry) {
+  var datadl = await fetchEntryFromPermaStoreV2(entry)
+  if (!datadl) {
+    return
+  }
+
+  var ciphertext = JSON.parse(Buffer.from(datadl))
+
+  
+  return ciphertext
 }

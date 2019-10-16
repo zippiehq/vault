@@ -20,16 +20,10 @@
  * SOFTWARE.
  *
  */
-import shajs from "sha.js";
-import secp256k1 from "secp256k1";
-import eccrypto from "eccrypto";
+import {fetchDataFromPermaStoreV2 } from '../utils';
 
 /**
- * Remote Storage Plugin for User Data
- *
- * Currently uses FMS, authkey and revokekey generated from the hash of a
- * provided freeform "key". Serialises and deserialises JSON.
- *
+ * Remote Storage Plugin for Contact Data
  */
 export default class {
   /**
@@ -41,69 +35,18 @@ export default class {
     vault.addReceiver(this);
   }
 
-  /**
-   *
-   */
-  async set(event) {
-    const req = event.data.contactList.set;
-    const keyhash = shajs("sha256")
-      .update(req.key)
-      .digest();
-    const masterkey = await this.derive(keyhash);
-
-    const authkey = await masterkey.derive("m/0");
-    const revokekey = await masterkey.derive("m/3/2");
-
-    const authpub = secp256k1.publicKeyConvert(authkey.publicKey, false);
-    const revokepub = secp256k1.publicKeyConvert(revokekey.publicKey, false);
-
-    let cipher = await eccrypto.encrypt(
-      authpub,
-      Buffer.from(JSON.stringify({ value: req.value, version: 1 }), "utf8")
-    );
-    console.info(cipher);
-
-    Object.keys(cipher).map(k => {
-      cipher[k] = cipher[k].toString("hex");
-    });
-
-    console.info("VAULT: Uploading user data (" + req.key + ") to FMS.");
-    return await this.fms.store(authpub, revokepub, cipher);
-  }
-
+ 
   /**
    *
    */
   async get(event) {
-    const req = event.data.contactList.get;
-    const keyhash = shajs("sha256")
-      .update(req.key)
-      .digest();
-    const masterkey = await this.derive(keyhash);
-
-    const authkey = await masterkey.derive("m/0");
-
-    let cipher = await this.fms.fetch(authkey.privateKey);
-    if (!cipher) {
-      console.warn("VAULT: Failed to retrieve user data:", req.key);
-      return null;
+    const req = event.data.contactList.get
+    const keyInfo = req.keyInfo
+    let contactList = await fetchDataFromPermaStoreV2(keyInfo)
+    if (!contactList) {
+      contactList = []
     }
-
-    Object.keys(cipher).map(k => {
-      cipher[k] = Buffer.from(cipher[k], "hex");
-    });
-
-    const plain = JSON.parse(
-      await eccrypto.decrypt(authkey.privateKey, cipher)
-    );
-    console.info(
-      "VAULT: Read user data",
-      req.key,
-      "with version:",
-      plain.version
-    );
-
-    return plain.value;
+    return contactList
   }
 
   /**
@@ -112,10 +55,7 @@ export default class {
   dispatchTo(context, event) {
     let req = event.data;
     if (!("contactList" in req)) return;
-
-    if ("set" in req.contactList) return this.set;
     if ("get" in req.contactList) return this.get;
-    if ("clear" in req.contactList) return this.clear;
 
     return null;
   }
