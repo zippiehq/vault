@@ -29,9 +29,13 @@ COPY zippie.config.js /app/zippie.config.js
 COPY version.js /app/version.js
 COPY src /app/src
 COPY worker /app/worker
+COPY BUILD_ID /app/BUILD_ID
+COPY BUILD_ID /app/public/BUILD_ID.txt
 
 # Build
 RUN npm run build
+
+RUN sed -i -e "s/%BUILD_ID%/$(cat BUILD_ID)/g" /app/dist/index.html
 
 # Extract licenses
 COPY LICENSE /app/dist/LICENSE.txt

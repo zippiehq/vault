@@ -7,6 +7,52 @@
     <style>
       * { margin: 0; padding: 0 }
     </style>
+
+    <script>
+      let checkInProgress = false
+
+      const checkVersion = function () {
+        // Set by CI
+        const buildIdTemplate = '%BUILD_ID%'
+        const staticVersion = buildIdTemplate
+
+        checkInProgress = true
+
+        const xhr = new XMLHttpRequest()
+        xhr.open('GET', '/BUILD_ID.txt?' + (Date.now() / 1000))
+        
+        xhr.onload = function () {
+          if (xhr.status !== 200) {
+            console.info('Failed to retrieve module version file.')
+            return
+          }
+
+          const modVersion = xhr.responseText.trim()
+
+          if (modVersion !== staticVersion) {
+            console.info('VERSION MISMATCH (static, current):', staticVersion, modVersion)
+            console.info('RELOADING...')
+            location.reload(true)
+            return
+          }
+
+          checkInProgress = false
+        }
+        
+        console.info('Attempting to retrieve module version file.')
+        xhr.send()
+      }
+
+      window.addEventListener('load', function () {
+        checkVersion()
+
+        document.addEventListener('visibilitychange', function() {
+          if (!checkInProgress && document.visibilityState === 'visible') {
+            checkVersion()
+          }
+        })
+      })
+    </script>
   </head>
   <body>
     <div id="content"></div>
