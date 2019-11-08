@@ -80,7 +80,7 @@ export default class {
     let req = event.data
     return await this.withMasterSeed(async function (masterseed) {
       let params = req.recovery.create
-
+      const type = params.type || 'uri'
       let enckey = Buffer.from(params.key, 'hex').slice(0, 32)
       let encpub = secp256k1.publicKeyCreate(enckey, false)
 
@@ -90,6 +90,7 @@ export default class {
       let revokehash = shajs('sha256').update('recovery/' + params.id).digest()
       let revokekey = await (await this.derive(revokehash)).derive('m/0')
       let revokepub = secp256k1.publicKeyConvert(revokekey.publicKey, false)
+      const enrollments = await this.enrollments();
 
       // Encrypt masterseed against recovery generation key.
       let cipher = await eccrypto.encrypt(encpub, masterseed)
@@ -99,7 +100,7 @@ export default class {
 
       console.info('VAULT: Uploading recovery data.')
       await this.fms.store(authpub, revokepub, cipher)
-      await this.enroll('uri', params.id, encpub.toString('hex'))
+      await this.enroll(type, params.id, encpub.toString('hex'))
 
       return { authkey: authkey.toString('hex') }
     }.bind(this))
@@ -137,7 +138,23 @@ export default class {
         return Promise.reject('VAULT_ERROR_INIT_IDENTITY')
       })
   }
+  async revokeBuddyRecovery(event) {
+    let req = event.data;
+    let params = req.recovery.revokeBuddyRecovery;
 
+    const enrollments = await this.enrollments();
+
+    let device = enrollments.find(v => v.name === params.name);
+    if (!device) return Promise.reject("Unable to find device in enrollments.");
+      const data = { 
+        revoke: {
+          deviceKey: device.deviceKey
+        }
+      }
+      const res = await this.revoke({data});
+    return res
+  }
+  
   /**
    * MessageDispatcher Interface
    */
@@ -149,6 +166,7 @@ export default class {
     if ('import' in req.recovery) return this.import
     if ('create' in req.recovery) return this.create
     if ('restore' in req.recovery) return this.restore
+    if ('revokeBuddyRecovery' in req.recovery) return this.revokeBuddyRecovery
 
     return null
   }

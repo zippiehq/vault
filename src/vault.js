@@ -663,7 +663,6 @@ export default class Vault {
   async revoke (ev) {
     let req = ev.data
     let params = req.revoke
-
     // Retrieve enrollment registry
     let enrollments = await this.enrollments()
 
@@ -676,7 +675,7 @@ export default class Vault {
     //   If enrollment is a recovery URI, we use a different revocation
     // key derivation method.
     if (device.type === 'uri') revokekey = 'recovery/' + device.name
-
+    if(device.type === 'buddy') revokekey = 'buddy/' + device.name
     // Derive FMS revocation key
     let revokehash = shajs('sha256').update(revokekey).digest();
     let revokeauth = await (await this.derive(revokehash)).derive("m/0")
