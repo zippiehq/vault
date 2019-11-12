@@ -590,15 +590,12 @@ export default class Vault {
 
     let passport = {}
 
-    if ('recover' in this.params) {
-      console.info('VAULT: Attempting to get identity passport userdata.')
-      try {
-        passport = await this.userdata.get.bind(this)({data: {userdata: { get: {key: 'passport'}}}})
-      } catch (e) {
-        console.warn('VAULT: Failed to get passport userdata.')
-      }
+    console.info('VAULT: Attempting to get identity passport userdata.')
+    try {
+      passport = await this.userdata.get.bind(this)({data: {userdata: { get: {key: 'passport'}}}})
+    } catch (e) {
+      console.warn('VAULT: Failed to get passport userdata.')
     }
-
     // XXX Still need a better, more robust way to do this.
     console.info('VAULT: Processing user parameters:', params)
     if (params['name']) passport.fullname = params['name']
