@@ -33,7 +33,7 @@ COPY version.js /app/version.js
 COPY src /app/src
 COPY worker /app/worker
 COPY BUILD_ID /app/BUILD_ID
-COPY BUILD_ID /app/public/BUILD_ID.txt
+COPY BUILD_ID /app/dist/BUILD_ID.txt
 
 # Build
 RUN npm run build
