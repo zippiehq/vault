@@ -1,13 +1,16 @@
-FROM node AS builder
+FROM node:10 AS builder
 
 WORKDIR /app
 
-COPY *.json /app/
-RUN npm install
+COPY package.json /app/
+COPY package-lock.json /app/
+
+# Install dependencies
+RUN npm ci
 
 
 # Generate third-party licenses file
-FROM node AS licenses
+FROM node:10 AS licenses
 
 WORKDIR /app
 
@@ -17,7 +20,7 @@ RUN npm install license-extractor
 RUN node_modules/license-extractor/bin/licext --mode output > /app/LICENSE.thirdparties.txt
 
 # Build application
-FROM node
+FROM node:10
 
 WORKDIR /app
 
