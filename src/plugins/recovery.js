@@ -26,6 +26,7 @@ import shajs from 'sha.js'
 import secp256k1 from 'secp256k1'
 import eccrypto from 'eccrypto'
 import { encrypt } from '../utils'
+import Cookie from 'js-cookie'
 
 /**
  * Vault Recovery Actions Provider Plugin
@@ -37,6 +38,15 @@ export default class {
   install (vault) {
     this.vault = vault
     vault.addReceiver(this)
+  }
+
+
+  wipeLocalAccount (ev) {
+    localStorage.clear()
+
+    Object.keys(Cookie.get())
+      .filter(k => k.startsWith('v-data-'))
+      .forEach(k => Cookie.remove(k))
   }
 
   /**
@@ -167,6 +177,7 @@ export default class {
     if ('create' in req.recovery) return this.create
     if ('restore' in req.recovery) return this.restore
     if ('revokeBuddyRecovery' in req.recovery) return this.revokeBuddyRecovery
+    if ('wipeLocalAccount' in req.recovery) return this.wipeLocalAccount
 
     return null
   }
