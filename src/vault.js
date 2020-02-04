@@ -33,8 +33,9 @@ import shajs from 'sha.js'
 import Crypto from 'crypto'
 import secp256k1 from 'secp256k1'
 import eccrypto from 'eccrypto'
+import { instantiateSecp256k1 } from 'bitcoin-ts';
 
-import HDKey from 'hdkey'
+import  { HDKey, initializeHDKey } from '@zippie/hdkey'
 import secrets from 'secrets.js-grempe'
 
 import { hashToParams, detectDeviceName } from './utils'
@@ -199,6 +200,11 @@ export default class Vault {
     // Parse vault query parameters
     this.params = hashToParams(window.location)
     console.info('VAULT: Parsed vault parameters:', this.params)
+
+    // Init HDKey & secp256k1 (WASM)
+    console.info('VAULT: Init HDKey & secp256k1 (WASM)')
+    const s = await instantiateSecp256k1()
+    await initializeHDKey(s)
 
     // Iterate vault plugins install phase.
     await this.plugin_exec('install', this)
