@@ -10,6 +10,8 @@
   "author": "Zippie Ltd.",
   "license": "Commercial/AGPLv3",
   "dependencies": {
+    "@zippie/hdkey": "^1.1.1",
+    "bitcoin-ts": "^1.11.1",
     "bs58": "^4.0.1",
     "eccrypto": "github:zippiehq/eccrypto",
     "hdkey": "^0.8.0",
