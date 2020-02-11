@@ -1,9 +1,9 @@
 module.exports = {
   development: {
     apis: {
-      fms: 'https://fms.zippie.org',
-      permastore: 'https://fms.zippie.org',
-      mailbox: 'https://fms.zippie.org'
+      fms: 'https://fms.dev.zippie.org',
+      permastore: 'https://fms.dev.zippie.org',
+      mailbox: 'https://fms.dev.zippie.org'
     },
     apps: {
       root: {
@@ -20,9 +20,9 @@ module.exports = {
 
   testing: {
     apis: {
-      fms: 'https://fms.zippie.org',
-      permastore: 'https://fms.zippie.org',
-      mailbox: 'https://fms.zippie.org'
+      fms: 'https://fms.testing.zippie.org',
+      permastore: 'https://fms.testing.zippie.org',
+      mailbox: 'https://fms.testing.zippie.org'
     },
     apps: {
       root: {
