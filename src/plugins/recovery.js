@@ -142,7 +142,7 @@ export default class {
 
     return this.initidentity(masterseed)
       .then(function () {
-        return this.launch(this.config.apps.user.home)
+        return params.noLaunch ? Promise.resolve('true') : this.launch(this.config.apps.user.home)
       }.bind(this))
       .catch(e => {
         return Promise.reject('VAULT_ERROR_INIT_IDENTITY')
